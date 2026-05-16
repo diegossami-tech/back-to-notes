@@ -47,6 +47,17 @@ const TEXT_STYLE_OPTIONS = {
   ],
 };
 
+const CARD_TYPE_FILTERS = [
+  { id: 'all', label: 'Tudo', icon: 'inbox' },
+  { id: 'text', label: 'Texto', icon: 'file-text' },
+  { id: 'print', label: 'Print', icon: 'image' },
+  { id: 'link', label: 'Link', icon: 'link' },
+  { id: 'post', label: 'Post', icon: 'bookmark' },
+  { id: 'pdf', label: 'PDF', icon: 'file-text' },
+  { id: 'word', label: 'Word', icon: 'file-text' },
+  { id: 'file', label: 'Arquivo', icon: 'folder' },
+];
+
 const STORAGE_KEY = 'biblioteca:v1';
 const FILE_DB_NAME = 'backtonotes-files';
 const FILE_DB_VERSION = 1;
@@ -155,6 +166,30 @@ function isPdfFileLike(file) {
   const type = String(file.fileType || file.type || '').toLowerCase();
   const name = String(file.fileName || file.name || '').toLowerCase();
   return type === 'application/pdf' || name.endsWith('.pdf');
+}
+
+function isWordFileLike(file) {
+  if (!file) return false;
+  const type = String(file.fileType || file.type || '').toLowerCase();
+  const name = String(file.fileName || file.name || '').toLowerCase();
+  return type === 'application/msword' ||
+    type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    name.endsWith('.doc') ||
+    name.endsWith('.docx');
+}
+
+function cardTypeKind(item) {
+  if (!item) return 'file';
+  if (item.imageData || item.type === 'image') return 'print';
+  if (item.fileStorageId || item.type === 'file') {
+    if (isPdfFileLike(item)) return 'pdf';
+    if (isWordFileLike(item)) return 'word';
+    return 'file';
+  }
+  if (item.type === 'link') return 'link';
+  if (item.type === 'post') return 'post';
+  if (item.type === 'note') return 'text';
+  return 'file';
 }
 
 function rememberPdfPreviewUrl(url, scope) {
@@ -683,6 +718,7 @@ let state = {
   collections: [...DEFAULT_COLLECTIONS],
   activeCol: 'all',
   activeTag: null,
+  activeKind: 'all',
   sortMode: 'recent',
   search: '',
   editing: null,
@@ -1040,6 +1076,7 @@ function saveNewFolder() {
     col.color = state.newFolder.color;
     state.activeCol = col.id;
     state.activeTag = null;
+    state.activeKind = 'all';
     state.newFolder = null;
     persist();
     renderAll();
@@ -1054,6 +1091,7 @@ function saveNewFolder() {
   });
   state.activeCol = id;
   state.activeTag = null;
+  state.activeKind = 'all';
   state.newFolder = null;
   state.showSidebar = false;
   persist();
@@ -1099,6 +1137,7 @@ function deleteCollection(id) {
     state.collections = state.collections.filter(c => c.id !== id);
     state.items = state.items.map(i => i.collection === id ? { ...i, collection: undefined } : i);
     if (state.activeCol === id) state.activeCol = 'all';
+    state.activeKind = 'all';
     persist();
     renderApp();
   });
@@ -1107,6 +1146,7 @@ function deleteCollection(id) {
 function setActiveCol(id) {
   state.activeCol = id;
   state.activeTag = null;
+  state.activeKind = 'all';
   state.showSidebar = false;
   state.selectedIds = [];
   state.selectMode = false;
@@ -1115,6 +1155,13 @@ function setActiveCol(id) {
 
 function setActiveTag(tag) {
   state.activeTag = state.activeTag === tag ? null : tag;
+  state.selectedIds = [];
+  renderApp();
+}
+
+function setActiveKind(kind) {
+  state.activeKind = kind || 'all';
+  state.activeTag = null;
   state.selectedIds = [];
   renderApp();
 }
@@ -1197,16 +1244,18 @@ function toggleSidebar(open) {
 }
 
 // ============ DERIVED ============
+function itemInActiveScope(it) {
+  const isTrashView = state.activeCol === 'lixeira';
+  if (isTrashView) return !!it.deletedAt;
+  if (it.deletedAt) return false;
+  return state.activeCol === 'all' || it.collection === state.activeCol;
+}
+
 function filteredItems() {
   const q = state.search.trim().toLowerCase();
-  const isTrashView = state.activeCol === 'lixeira';
   let items = state.items.filter(it => {
-    if (isTrashView) {
-      if (!it.deletedAt) return false;
-    } else {
-      if (it.deletedAt) return false;
-      if (state.activeCol !== 'all' && it.collection !== state.activeCol) return false;
-    }
+    if (!itemInActiveScope(it)) return false;
+    if (state.activeKind && state.activeKind !== 'all' && cardTypeKind(it) !== state.activeKind) return false;
     if (state.activeTag && !(it.tags || []).includes(state.activeTag)) return false;
     if (!q) return true;
     return (
@@ -1238,6 +1287,19 @@ function tagCounts() {
     (it.tags || []).forEach(t => map.set(t, (map.get(t) || 0) + 1));
   });
   return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
+}
+
+function typeFilterCounts() {
+  const counts = { all: 0 };
+  state.items.forEach(it => {
+    if (!itemInActiveScope(it)) return;
+    counts.all++;
+    const kind = cardTypeKind(it);
+    counts[kind] = (counts[kind] || 0) + 1;
+  });
+  return CARD_TYPE_FILTERS
+    .map(filter => ({ ...filter, count: counts[filter.id] || 0 }))
+    .filter(filter => filter.id === 'all' || filter.count > 0);
 }
 
 function statsLine() {
@@ -1600,6 +1662,8 @@ function renderApp() {
   const activeColName = state.activeCol === 'all' ? 'Tudo'
     : state.activeCol === 'lixeira' ? 'Lixeira'
     : (cur?.name || 'Coleção');
+  const typeFilters = typeFilterCounts();
+  if (state.activeKind !== 'all' && !typeFilters.some(f => f.id === state.activeKind)) state.activeKind = 'all';
   const items = filteredItems();
   const visibleIds = new Set(items.map(i => i.id));
   if (state.selectedIds?.some(id => !visibleIds.has(id))) {
@@ -1607,7 +1671,6 @@ function renderApp() {
   }
   const selectedCount = state.selectedIds?.length || 0;
   const stats = statsLine();
-  const tags = tagCounts();
 
   // Collections hidden from the sidebar (still exist in state so any items
   // already in them aren't orphaned — just not surfaced in nav).
@@ -1689,14 +1752,13 @@ function renderApp() {
         </header>
         </header>
 
-        ${tags.length > 0 ? `
+        ${typeFilters.length > 0 && typeFilters[0].count > 0 ? `
           <div class="toolbar">
             <div class="tagrow-wrap">
-              <span class="tagrow-label">Tags</span>
-              ${state.activeTag ? `<button class="tagchip clear" data-action="clear-tag">limpar filtro</button>` : ''}
-              ${tags.slice(0, 24).map(t => `
-                <button class="tagchip ${state.activeTag === t.name ? 'active' : ''}" data-action="set-tag" data-tag="${esc(t.name)}">
-                  <span>${esc(t.name)}</span><span class="ct">${t.count}</span>
+              <span class="tagrow-label">Tipos</span>
+              ${typeFilters.map(t => `
+                <button class="tagchip ${state.activeKind === t.id ? 'active' : ''}" data-action="set-kind" data-kind="${esc(t.id)}" title="Ver ${esc(t.label)}">
+                  ${icon(t.icon, 12)}<span>${esc(t.label)}</span><span class="ct">${t.count}</span>
                 </button>
               `).join('')}
             </div>
@@ -3180,6 +3242,7 @@ document.addEventListener('click', (e) => {
     case 'close-sidebar': toggleSidebar(false); break;
     case 'set-tag': setActiveTag(actionEl.dataset.tag); break;
     case 'clear-tag': state.activeTag = null; renderApp(); break;
+    case 'set-kind': setActiveKind(actionEl.dataset.kind); break;
     case 'cycle-sort': cycleSortMode(); break;
     case 'export-library': exportLibrary(); break;
     case 'import-library': importLibrary(); break;
