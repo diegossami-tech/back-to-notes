@@ -782,12 +782,17 @@ function persist() {
   saveTimer = setTimeout(async () => {
     try {
       await externalizeImagesForStorage();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      const payload = JSON.stringify({
         items: persistableItems(),
         collections: state.collections,
-      }));
+      });
+      try {
+        localStorage.setItem(STORAGE_KEY, payload);
+      } catch (err) {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.setItem(STORAGE_KEY, payload);
+      }
       saveErrorShown = false;
-      scheduleCloudPush();
     } catch (e) {
       console.error('Save failed:', e);
       if (!saveErrorShown) {
@@ -998,9 +1003,8 @@ function readableSyncError(err) {
 }
 
 function scheduleCloudPush() {
-  if (suppressCloudPush || !syncState.client || !syncState.user) return;
-  clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => pushLibraryToCloud({ silent: true }), 1200);
+  // BackNotes is local-first: user data is saved in this browser.
+  // Cloud sync only runs when the user explicitly clicks "Sincronizar agora".
 }
 
 async function pushLibraryToCloud({ silent = false } = {}) {
@@ -1085,11 +1089,9 @@ async function initSync() {
   syncState.client.auth.onAuthStateChange((_event, session) => {
     syncState.user = session?.user || null;
     syncState.status = syncState.user ? 'online' : 'offline';
-    renderAll();
-    if (syncState.user) pullLibraryFromCloud({ silent: true });
+    renderApp();
   });
   renderApp();
-  if (syncState.user) await pullLibraryFromCloud({ silent: true });
 }
 
 // ============ THUMB ENRICHMENT ============
@@ -2880,7 +2882,7 @@ function renderSyncPanel() {
             ` : syncState.user ? `
               <div class="sync-status-card">
                 <strong>${esc(userEmail)}</strong>
-                <span>${syncState.busy ? 'Sincronizando...' : syncState.lastSync ? `Ultimo sync: ${esc(formatDate(syncState.lastSync))}` : 'Pronto para sincronizar'}</span>
+                <span>${syncState.busy ? 'Sincronizando...' : syncState.lastSync ? `Ultimo sync: ${esc(formatDate(syncState.lastSync))}` : 'Salvo neste navegador'}</span>
                 ${syncState.lastError ? `<small>${esc(syncState.lastError)}</small>` : ''}
               </div>
               <div class="sync-actions">
@@ -2964,7 +2966,6 @@ async function handleSyncAuth(mode) {
     syncState.status = syncState.user ? 'online' : 'offline';
     showToast(mode === 'signup' ? 'Conta criada. Verifique o e-mail se solicitado.' : 'Sync conectado');
     syncState.busy = false;
-    if (syncState.user) await pullLibraryFromCloud({ silent: true });
   } catch (err) {
     console.error(err);
     syncState.lastError = readableSyncError(err);
@@ -3933,7 +3934,7 @@ window.addEventListener('resize', () => {
 load();
 renderAll();
 hydrateStoredImages();
-persist();
+if (state.items.some(item => item?.imageData && !item.imageStorageId)) persist();
 initSync();
 // Backfill thumbs for existing items in the background.
 setTimeout(enrichLibrary, 800);
