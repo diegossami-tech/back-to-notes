@@ -882,6 +882,14 @@ function syncTitle() {
   return syncState.lastSync ? `Sincronizado ${formatDate(syncState.lastSync)}` : 'Sincronizar agora';
 }
 
+function readableSyncError(err) {
+  const message = String(err?.message || err || '');
+  if (/failed to fetch|networkerror|load failed/i.test(message)) {
+    return 'Nao consegui conectar ao Supabase. Confira se o Project URL esta correto em supabase-config.js.';
+  }
+  return message || 'Erro de sincronizacao';
+}
+
 function scheduleCloudPush() {
   if (suppressCloudPush || !syncState.client || !syncState.user) return;
   clearTimeout(syncTimer);
@@ -906,8 +914,8 @@ async function pushLibraryToCloud({ silent = false } = {}) {
   } catch (err) {
     console.error(err);
     syncState.status = 'error';
-    syncState.lastError = err.message || 'Erro de sincronizacao';
-    if (!silent) showToast('Nao foi possivel sincronizar');
+    syncState.lastError = readableSyncError(err);
+    if (!silent) showToast(syncState.lastError || 'Nao foi possivel sincronizar');
   } finally {
     syncState.busy = false;
     renderApp();
@@ -938,8 +946,8 @@ async function pullLibraryFromCloud({ merge = true, silent = false } = {}) {
   } catch (err) {
     console.error(err);
     syncState.status = 'error';
-    syncState.lastError = err.message || 'Erro de sincronizacao';
-    if (!silent) showToast('Nao foi possivel baixar o sync');
+    syncState.lastError = readableSyncError(err);
+    if (!silent) showToast(syncState.lastError || 'Nao foi possivel baixar o sync');
   } finally {
     syncState.busy = false;
     renderAll();
@@ -2767,7 +2775,8 @@ async function handleSyncAuth(mode) {
     if (syncState.user) await pullLibraryFromCloud({ silent: true });
   } catch (err) {
     console.error(err);
-    showToast(err.message || 'Nao foi possivel entrar');
+    syncState.lastError = readableSyncError(err);
+    showToast(syncState.lastError || 'Nao foi possivel entrar');
   } finally {
     syncState.busy = false;
     renderSyncPanel();
