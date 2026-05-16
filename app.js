@@ -107,7 +107,7 @@ async function getStoredFile(id) {
   return record;
 }
 
-const pdfPreviewUrls = new Set();
+const pdfPreviewUrls = new Map();
 
 function isPdfFileLike(file) {
   if (!file) return false;
@@ -116,9 +116,17 @@ function isPdfFileLike(file) {
   return type === 'application/pdf' || name.endsWith('.pdf');
 }
 
-function revokePdfPreviewUrls() {
-  pdfPreviewUrls.forEach(url => URL.revokeObjectURL(url));
-  pdfPreviewUrls.clear();
+function rememberPdfPreviewUrl(url, scope) {
+  if (!pdfPreviewUrls.has(scope)) pdfPreviewUrls.set(scope, new Set());
+  pdfPreviewUrls.get(scope).add(url);
+}
+
+function revokePdfPreviewUrls(scope = null) {
+  const scopes = scope ? [scope] : Array.from(pdfPreviewUrls.keys());
+  scopes.forEach(key => {
+    pdfPreviewUrls.get(key)?.forEach(url => URL.revokeObjectURL(url));
+    pdfPreviewUrls.delete(key);
+  });
 }
 
 async function hydratePdfPreviews(root = document) {
@@ -139,7 +147,7 @@ async function hydratePdfPreviews(root = document) {
         URL.revokeObjectURL(url);
         continue;
       }
-      pdfPreviewUrls.add(url);
+      rememberPdfPreviewUrl(url, preview.dataset.pdfPreviewScope || 'viewer');
       frame.src = `${url}#toolbar=0&navpanes=0`;
       preview.classList.add('is-loaded');
       if (status) status.textContent = 'Preview carregado.';
@@ -1295,6 +1303,7 @@ window.state = state;
 
 // ============ RENDER: MAIN APP ============
 function renderApp() {
+  revokePdfPreviewUrls('card');
   const c = collCounts();
   const cur = state.collections.find(c => c.id === state.activeCol);
   const activeColName = state.activeCol === 'all' ? 'Tudo'
@@ -1429,6 +1438,7 @@ function renderApp() {
       </div>
     </div>
   `;
+  hydratePdfPreviews($('#app'));
 }
 
 function renderColItem(col, active, count, deletable) {
@@ -1505,7 +1515,8 @@ function renderCard(item, idx) {
   const hasHeroThumb = item.thumbUrl && providerKey && heroKinds.has(providerKey);
   const isHeroVideo = isYoutubeVideo || hasHeroThumb;
   const tags = item.tags || [];
-  const variant = item.imageData ? 'image' : isHeroVideo ? 'video' : item.type;
+  const hasPdfPreview = item.fileStorageId && isPdfFileLike(item);
+  const variant = item.imageData ? 'image' : hasPdfPreview ? 'pdf' : isHeroVideo ? 'video' : item.type;
   const dateLabel = formatDate(item.updatedAt || item.createdAt);
   const heroInfo = providerKey ? brandInfo(providerMeta) : null;
 
@@ -1518,7 +1529,7 @@ function renderCard(item, idx) {
   const titleHtml = `<h3 class="card-title">${item.title ? esc(item.title) : '<em style="opacity:0.5">Sem título</em>'}</h3>`;
   const tagsHtml = tags.slice(0, 3).map(t => `<span class="tag">${esc(t)}</span>`).join('') +
     (tags.length > 3 ? `<span class="tag-more">+${tags.length - 3}</span>` : '');
-  const fileHtml = item.fileStorageId ? `
+  const fileHtml = item.fileStorageId && !hasPdfPreview ? `
     <div class="card-file">
       <span class="card-file-icon">${icon('folder', 16)}</span>
       <span class="card-file-text">
@@ -1545,6 +1556,33 @@ function renderCard(item, idx) {
         <img class="card-image" src="${esc(item.imageData)}" alt="" draggable="false">
         <div class="card-body">
           ${head}${titleHtml}
+          ${item.content ? `<p class="card-content">${esc(item.content)}</p>` : ''}
+          ${foot}
+        </div>
+      </article>
+    `;
+  }
+
+  if (variant === 'pdf') {
+    return `
+      <article class="card variant-pdf" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="true" style="animation-delay:${Math.min(idx * 25, 200)}ms">
+        <div class="card-pdf-preview" data-pdf-preview-id="${esc(item.id)}" data-pdf-preview-scope="card" aria-hidden="true">
+          <iframe title="Preview de ${esc(item.fileName || item.title || 'PDF')}" loading="lazy" tabindex="-1"></iframe>
+          <div class="card-pdf-fallback">
+            ${icon('file-text', 24)}
+            <span>PDF</span>
+          </div>
+        </div>
+        <div class="card-body">
+          ${head}
+          ${titleHtml}
+          <div class="card-file card-file-compact">
+            <span class="card-file-icon">${icon('file-text', 16)}</span>
+            <span class="card-file-text">
+              <strong>${esc(item.fileName || item.title || 'PDF')}</strong>
+              <small>${esc(formatBytes(item.fileSize) || 'PDF')}</small>
+            </span>
+          </div>
           ${item.content ? `<p class="card-content">${esc(item.content)}</p>` : ''}
           ${foot}
         </div>
@@ -1809,7 +1847,7 @@ function renderViewer(root) {
           ` : ''}
 
           ${item.fileStorageId && hasPdfPreview ? `
-            <div class="pdf-preview" data-pdf-preview-id="${esc(item.id)}">
+            <div class="pdf-preview" data-pdf-preview-id="${esc(item.id)}" data-pdf-preview-scope="viewer">
               <div class="pdf-preview-head">
                 <span>${icon('file-text', 14)}<strong>Preview do PDF</strong></span>
                 <small class="pdf-preview-status">Carregando...</small>
