@@ -41,9 +41,10 @@ const TEXT_STYLE_OPTIONS = {
     { id: 'xlarge', label: 'GG' },
   ],
   align: [
-    { id: 'left', label: 'Esq.' },
-    { id: 'center', label: 'Centro' },
-    { id: 'justify', label: 'Justificar' },
+    { id: 'left', label: 'Alinhar a esquerda', icon: 'align-left' },
+    { id: 'center', label: 'Centralizar', icon: 'align-center' },
+    { id: 'right', label: 'Alinhar a direita', icon: 'align-right' },
+    { id: 'justify', label: 'Justificar', icon: 'align-justify' },
   ],
 };
 
@@ -328,6 +329,15 @@ function detectProvider(url) {
     if (host === 'vimeo.com') {
       if (parts[0] && /^\d+$/.test(parts[0])) return { provider:'vimeo', kind:'video', id:parts[0], aspect:'h' };
     }
+    if (host === 'fb.watch') {
+      return { provider:'facebook', kind:'reel', id:parts[0], aspect:'v' };
+    }
+    if (host === 'facebook.com' || host.endsWith('.facebook.com')) {
+      if (parts[0] === 'reel' || parts[0] === 'reels') return { provider:'facebook', kind:'reel', id:parts[1], aspect:'v' };
+      if (parts[0] === 'watch') return { provider:'facebook', kind:'video', id:u.searchParams.get('v') || parts[1], aspect:'h' };
+      if (parts.includes('videos')) return { provider:'facebook', kind:'video', id:parts[parts.indexOf('videos') + 1], aspect:'h' };
+      if (parts[0] === 'share' && (parts[1] === 'r' || parts[1] === 'v')) return { provider:'facebook', kind:parts[1] === 'r' ? 'reel' : 'video', id:parts[2], aspect:parts[1] === 'r' ? 'v' : 'h' };
+    }
     if (host === 'twitch.tv' || host.endsWith('.twitch.tv')) {
       if (parts.length === 1 && parts[0]) return { provider:'twitch', kind:'channel', user:parts[0], aspect:'h' };
       if (parts[0] === 'videos' && parts[1]) return { provider:'twitch', kind:'vod', id:parts[1], aspect:'h' };
@@ -375,6 +385,9 @@ const BRAND_INFO = {
 
   'vimeo:video':      { label:'Vimeo',    gradient:'linear-gradient(135deg,#0a1f2c 0%,#162d3a 40%,#1ab7ea 100%)', accent:'#1ab7ea', glyph:'play-rect' },
 
+  'facebook:reel':    { label:'Reel',     sub:'Facebook', gradient:'linear-gradient(135deg,#071b46 0%,#0866ff 62%,#5aa7ff 100%)', accent:'#0866ff', glyph:'facebook' },
+  'facebook:video':   { label:'Video',    sub:'Facebook', gradient:'linear-gradient(135deg,#06152f 0%,#0866ff 72%,#5aa7ff 100%)', accent:'#0866ff', glyph:'facebook' },
+
   'twitch:channel':   { label:'Twitch',   sub:'canal', gradient:'linear-gradient(135deg,#1f0a3d,#6441a5 60%,#9146ff)', accent:'#9146ff', glyph:'twitch' },
   'twitch:clip':      { label:'Twitch',   sub:'clip',  gradient:'linear-gradient(135deg,#1f0a3d,#9146ff)', accent:'#9146ff', glyph:'twitch' },
   'twitch:vod':       { label:'Twitch',   sub:'vídeo', gradient:'linear-gradient(135deg,#1f0a3d,#9146ff)', accent:'#9146ff', glyph:'twitch' },
@@ -400,6 +413,7 @@ const BRAND_GLYPHS = {
   'x': `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 3l7.5 9.6L3.5 21h2.4l5.6-6.8 5.3 6.8H21l-7.9-10L20.4 3H18l-5.2 6.3L7.8 3z"/></svg>`,
   'twitch': `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 3h16v11l-4 4h-4l-3 3H7v-3H4zm2 2v11h3v3l3-3h4l3-3V5zm6 3h2v5h-2zm5 0h2v5h-2z"/></svg>`,
   'spotify': `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="currentColor"/><path d="M7 10.5c3.5-1 7.5-.5 10.5 1.2M7.7 13.6c2.8-.7 6-.4 8.5 1M8.2 16.4c2.2-.5 4.7-.3 6.7.8" stroke="#0a3a1a" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>`,
+  'facebook': `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M13.6 20v-7h2.3l.4-2.7h-2.7V8.6c0-.8.2-1.3 1.4-1.3h1.4V4.9c-.7-.1-1.4-.1-2.1-.1-2.2 0-3.7 1.3-3.7 3.7v1.8H8.2V13h2.4v7z" fill="#fff"/></svg>`,
 };
 
 function brandGlyph(name, size = 24) {
@@ -498,7 +512,7 @@ const OEMBED_ENDPOINTS = {
 // Providers that don't have a public oEmbed (or it requires auth). Fall back
 // to microlink.io's free metadata endpoint, which scrapes og:image and the
 // like. 50 req/day on the free tier, which is plenty for a personal lib.
-const MICROLINK_PROVIDERS = new Set(['instagram', 'twitch', 'twitter']);
+const MICROLINK_PROVIDERS = new Set(['instagram', 'twitch', 'twitter', 'facebook']);
 
 async function fetchMicrolinkMeta(url) {
   if (!url) return null;
@@ -680,6 +694,15 @@ async function fetchProviderMetadata(url) {
     }
   }
   return oe;
+}
+
+function shouldDeferProviderMetadata(url) {
+  const detected = detectProvider(url);
+  return detected && MICROLINK_PROVIDERS.has(detected.provider);
+}
+
+async function quickProviderMetadata(url) {
+  return shouldDeferProviderMetadata(url) ? null : await fetchProviderMetadata(url);
 }
 
 // Back-compat shim — older code asked for the title only.
@@ -1069,6 +1092,27 @@ function saveItem(item) {
   if (saved?.url && !saved.thumbUrl && !saved.thumbFailed) {
     enrichItemAsync(saved.id);
   }
+}
+
+function toggleItemPin(id) {
+  const item = state.items.find(i => i.id === id);
+  if (!item) return;
+  const pinnedAt = item.pinnedAt ? null : Date.now();
+  state.items = state.items.map(i => i.id === id ? { ...i, pinnedAt } : i);
+  if (state.viewing?.id === id) state.viewing = { ...state.viewing, pinnedAt };
+  persist();
+  renderAll();
+  showToast(pinnedAt ? 'Card fixado na tela inicial' : 'Card desafixado');
+}
+
+function toggleCollectionPin(id) {
+  const col = state.collections.find(c => c.id === id);
+  if (!col || col.system) return;
+  const pinnedAt = col.pinnedAt ? null : Date.now();
+  state.collections = state.collections.map(c => c.id === id ? { ...c, pinnedAt } : c);
+  persist();
+  renderApp();
+  showToast(pinnedAt ? 'Pasta fixada no sidebar' : 'Pasta desafixada');
 }
 
 // ============ CONFIRM DIALOG ============
@@ -1504,7 +1548,11 @@ function filteredItems() {
     oldest: (a, b) => (a.updatedAt || 0) - (b.updatedAt || 0),
     alpha:  (a, b) => (a.title || '').localeCompare(b.title || '', 'pt-BR'),
   };
-  return items.sort(sorters[state.sortMode] || sorters.recent);
+  const sorter = sorters[state.sortMode] || sorters.recent;
+  return items.sort((a, b) => {
+    const pinDelta = (b.pinnedAt || 0) - (a.pinnedAt || 0);
+    return pinDelta || sorter(a, b);
+  });
 }
 
 function collCounts() {
@@ -1586,17 +1634,28 @@ function renderFolderPicker(selectedId, attrName) {
 function renderTextStyleToolbar(style) {
   const normalized = normalizeTextStyle(style);
   const groupLabels = { font: 'Fonte', size: 'Tamanho', align: 'Alinhamento' };
+  const symbolFor = (group, opt) => {
+    if (group === 'align') return icon(opt.icon, 16);
+    if (group === 'font') return opt.id === 'mono' ? '<span aria-hidden="true">{ }</span>' : `<span aria-hidden="true">${opt.id === 'serif' ? 'S' : 'A'}</span>`;
+    if (group === 'size') return `<span aria-hidden="true">${esc(opt.label)}</span>`;
+    return esc(opt.label);
+  };
   return `
     <div class="text-style-toolbar" id="text-style-toolbar">
       ${Object.entries(TEXT_STYLE_OPTIONS).map(([group, options]) => `
         <div class="text-style-group" aria-label="${esc(groupLabels[group])}">
           ${options.map(opt => `
-            <button class="text-style-btn ${normalized[group] === opt.id ? 'active' : ''}" type="button" data-text-style="${esc(group)}" data-value="${esc(opt.id)}" aria-label="${esc(groupLabels[group] + ': ' + opt.label)}">
-              ${esc(opt.label)}
+            <button class="text-style-btn ${normalized[group] === opt.id ? 'active' : ''}" type="button" data-text-style="${esc(group)}" data-value="${esc(opt.id)}" aria-label="${esc(opt.label)}" title="${esc(opt.label)}">
+              ${symbolFor(group, opt)}
             </button>
           `).join('')}
         </div>
       `).join('')}
+      <div class="text-style-group text-style-tools" aria-label="Marcadores">
+        <button class="text-style-btn" type="button" data-text-tool="bullet" aria-label="Marcadores" title="Marcadores">
+          ${icon('list', 16)}
+        </button>
+      </div>
     </div>
   `;
 }
@@ -1926,7 +1985,9 @@ function renderApp() {
   // already in them aren't orphaned — just not surfaced in nav).
   const HIDDEN_FROM_SIDEBAR = new Set(['estudar', 'estudado', 'escritos']);
   const sysCols = state.collections.filter(c => c.system && !HIDDEN_FROM_SIDEBAR.has(c.id));
-  const userCols = state.collections.filter(c => !c.system);
+  const userCols = state.collections
+    .filter(c => !c.system)
+    .sort((a, b) => (b.pinnedAt || 0) - (a.pinnedAt || 0));
 
   $('#app').innerHTML = `
     <div class="app">
@@ -2065,13 +2126,15 @@ function renderColItem(col, active, count, options = {}) {
     typeof options === 'boolean' ? { editable: options, deletable: options, draggable: options } : options;
   const isDraggable = draggable; // user folders are reorderable
   const editLabel = col.system ? 'Editar nome da coleção' : 'Editar nome da pasta';
+  const pinned = !!col.pinnedAt;
   return `
-    <button class="col-item ${active ? 'active' : ''} ${isDraggable ? 'folder-draggable' : ''}" data-action="set-col" data-id="${esc(col.id)}" data-drop-col="${esc(col.id)}" ${isDraggable ? `draggable="true" data-folder-id="${esc(col.id)}"` : ''} style="--col-color:${col.color}">
+    <button class="col-item ${active ? 'active' : ''} ${pinned ? 'is-pinned' : ''} ${isDraggable ? 'folder-draggable' : ''}" data-action="set-col" data-id="${esc(col.id)}" data-drop-col="${esc(col.id)}" ${isDraggable ? `draggable="true" data-folder-id="${esc(col.id)}"` : ''} style="--col-color:${col.color}">
       <span class="col-item-left">
         <span class="col-item-icon" style="color:${col.color}">${icon(col.icon, 16)}</span>
         <span>${esc(col.name)}</span>
       </span>
       <span class="col-item-right">
+        ${deletable ? `<span class="col-action col-pin ${pinned ? 'active' : ''}" data-action="toggle-pin-col" data-id="${esc(col.id)}" title="${pinned ? 'Desafixar pasta' : 'Fixar pasta no sidebar'}" aria-label="${pinned ? 'Desafixar pasta' : 'Fixar pasta no sidebar'}" draggable="false">${icon('pin', 12)}</span>` : ''}
         ${editable ? `<span class="col-action col-edit" data-action="edit-col" data-id="${esc(col.id)}" title="${esc(editLabel)}" aria-label="${esc(editLabel)}" draggable="false">${icon('pencil', 12)}</span>` : ''}
         ${deletable ? `
           <span class="col-action col-delete" data-action="del-col" data-id="${esc(col.id)}" title="Deletar pasta" aria-label="Deletar pasta" draggable="false">${icon('x', 12)}</span>
@@ -2129,6 +2192,7 @@ function renderCard(item, idx) {
     'twitch:channel','twitch:clip','twitch:vod',
     'tiktok:video',
     'instagram:reel','instagram:tv',
+    'facebook:reel','facebook:video',
   ]);
   const heroKinds = new Set([
     ...playableKinds,
@@ -2148,7 +2212,8 @@ function renderCard(item, idx) {
   const dateLabel = formatDate(item.updatedAt || item.createdAt);
   const heroInfo = providerKey ? brandInfo(providerMeta) : null;
   const isSelected = selectedItemSet().has(item.id);
-  const cardClass = `card variant-${variant === 'video' ? 'video' : variant === 'pdf' ? 'pdf' : item.type} ${isCenteredTextPreview ? 'variant-centered-text' : ''} ${state.selectMode ? 'select-mode-card' : ''} ${isSelected ? 'selected' : ''}`;
+  const isPinned = !!item.pinnedAt;
+  const cardClass = `card variant-${variant === 'video' ? 'video' : variant === 'pdf' ? 'pdf' : item.type} ${isPinned ? 'is-pinned' : ''} ${isCenteredTextPreview ? 'variant-centered-text' : ''} ${state.selectMode ? 'select-mode-card' : ''} ${isSelected ? 'selected' : ''}`;
   const draggableAttr = state.selectMode ? 'false' : 'true';
   const selectMark = state.selectMode
     ? `<span class="card-select-mark" data-action="toggle-card-select" data-id="${esc(item.id)}" aria-label="${isSelected ? 'Desmarcar card' : 'Selecionar card'}">${isSelected ? icon('check-circle', 18) : icon('circle', 18)}</span>`
@@ -2179,6 +2244,7 @@ function renderCard(item, idx) {
   const foot = `
     <div class="card-foot">
       <span class="card-date">${esc(dateLabel)}</span>
+      <button class="card-pin ${isPinned ? 'active' : ''}" data-action="toggle-pin-item" data-id="${esc(item.id)}" title="${isPinned ? 'Desafixar card' : 'Fixar card na tela inicial'}" aria-label="${isPinned ? 'Desafixar card' : 'Fixar card na tela inicial'}">${icon('pin', 13)}</button>
       <div class="tags">${tagsHtml}</div>
       ${studyHtml}
     </div>
@@ -2524,6 +2590,7 @@ function renderViewer(root) {
 
         <div class="modal-foot">
           <div>
+            <button class="icon-btn ${item.pinnedAt ? 'active' : ''}" style="color:var(--primary);opacity:0.85" data-action="toggle-pin-item" data-id="${esc(item.id)}" title="${item.pinnedAt ? 'Desafixar card' : 'Fixar card'}">${icon('pin', 16)}</button>
             ${item.deletedAt
               ? `<button class="icon-btn" style="color:var(--moss);opacity:0.85" data-action="restore-item" data-id="${esc(item.id)}" title="Restaurar">${icon('upload', 16)}</button>`
               : `<button class="icon-btn" style="color:var(--primary);opacity:0.8" data-action="delete-item" data-id="${esc(item.id)}" title="Mover para lixeira">${icon('trash', 16)}</button>`}
@@ -3255,7 +3322,7 @@ window.addEventListener('drop', async (e) => {
   if (!uri) return;
   const url = normalizeUrl(uri);
   if (url) {
-    const meta = await fetchProviderMetadata(url);
+    const meta = await quickProviderMetadata(url);
     openQuickAdd({
       type: 'link',
       title: meta?.title || getDomain(url) || '',
@@ -3430,7 +3497,7 @@ async function draftFromClipboardData(clipboardData) {
   if (!text) return null;
   const url = normalizeUrl(text);
   if (url) {
-    const meta = await fetchProviderMetadata(url);
+    const meta = await quickProviderMetadata(url);
     return {
       type: 'link',
       title: meta?.title || getDomain(url) || '',
@@ -3516,6 +3583,22 @@ function changeDraftTextStyle(key, value) {
   state.editing = { ...modalDraft, isNew: !modalDraft.id };
   renderModal();
 }
+
+function toggleDraftBullets() {
+  if (!modalDraft) return;
+  syncDraftFromDom();
+  const lines = String(modalDraft.content || '').split('\n');
+  const nonEmpty = lines.filter(line => line.trim());
+  const shouldRemove = nonEmpty.length > 0 && nonEmpty.every(line => /^\s*[-*]\s+/.test(line));
+  modalDraft.content = lines.map(line => {
+    if (!line.trim()) return line;
+    return shouldRemove ? line.replace(/^(\s*)[-*]\s+/, '$1') : line.replace(/^(\s*)/, '$1- ');
+  }).join('\n');
+  state.editing = { ...modalDraft, isNew: !modalDraft.id };
+  renderModal();
+  setTimeout(() => $('#f-content')?.focus(), 30);
+}
+
 function handleSave() {
   const d = commitDraftFromDom();
   if (!d) return;
@@ -3547,6 +3630,12 @@ document.addEventListener('click', (e) => {
     if (typeChip) { e.stopPropagation(); changeDraftField('type', typeChip.dataset.type); return; }
     const textStyleBtn = e.target.closest('[data-text-style]');
     if (textStyleBtn) { e.stopPropagation(); changeDraftTextStyle(textStyleBtn.dataset.textStyle, textStyleBtn.dataset.value); return; }
+    const textToolBtn = e.target.closest('[data-text-tool]');
+    if (textToolBtn) {
+      e.stopPropagation();
+      if (textToolBtn.dataset.textTool === 'bullet') toggleDraftBullets();
+      return;
+    }
     const collChip = e.target.closest('#coll-row [data-coll]');
     if (collChip) { e.stopPropagation(); changeDraftField('collection', collChip.dataset.coll); return; }
     const removeTagBtn = e.target.closest('[data-remove-tag]');
@@ -3598,8 +3687,10 @@ document.addEventListener('click', (e) => {
     case 'add-col': addCollection(); break;
     case 'edit-col': editCollection(id); break;
     case 'del-col': deleteCollection(id); break;
+    case 'toggle-pin-col': toggleCollectionPin(id); break;
     case 'toggle-select-mode': toggleSelectMode(); break;
     case 'toggle-card-select': toggleItemSelection(id); break;
+    case 'toggle-pin-item': toggleItemPin(id); break;
     case 'clear-selection': clearSelection({ exit: true }); break;
     case 'bulk-move': moveSelectedItemsToCollection(id); break;
     case 'new-item': openEditor(null); break;
@@ -3684,6 +3775,12 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.target.id === 'quick-title' && e.key === 'Enter') {
+    e.preventDefault();
+    saveQuickAdd();
+    return;
+  }
+
   // Tag input handling
   const tagInput = $('#f-tag');
   if (e.target === tagInput && modalDraft) {
@@ -3731,6 +3828,9 @@ document.addEventListener('input', (e) => {
     const value = e.target.value.trim();
     if (modalDraft) modalDraft.url = value;
     scheduleYouTubeTitleFill(value);
+  }
+  if (e.target.id === 'quick-title' && state.quickAdd) {
+    state.quickAdd.title = e.target.value;
   }
   if (e.target.id === 'nf-name' && state.newFolder) {
     state.newFolder.name = e.target.value;
