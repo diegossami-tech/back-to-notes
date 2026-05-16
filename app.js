@@ -59,6 +59,7 @@ const CARD_TYPE_FILTERS = [
 ];
 
 const STORAGE_KEY = 'biblioteca:v1';
+const SYNC_TABLE = 'backnotes_libraries';
 const FILE_DB_NAME = 'backtonotes-files';
 const FILE_DB_VERSION = 1;
 const FILE_STORE = 'files';
@@ -740,6 +741,17 @@ let state = {
 };
 
 let saveTimer;
+let syncTimer;
+let suppressCloudPush = false;
+const syncState = {
+  client: null,
+  configured: false,
+  user: null,
+  busy: false,
+  status: 'offline',
+  lastSync: null,
+  lastError: '',
+};
 
 function persist() {
   clearTimeout(saveTimer);
@@ -749,6 +761,7 @@ function persist() {
         items: state.items,
         collections: state.collections,
       }));
+      scheduleCloudPush();
     } catch (e) {
       console.error('Save failed:', e);
       showToast('Não foi possível salvar — armazenamento cheio?', 4000);
@@ -772,6 +785,196 @@ function load() {
     (it.thumbUrl && it.thumbUrl.startsWith('data:')) ? { ...it, thumbUrl: null, thumbFailed: false } : it
   );
   state.loading = false;
+}
+
+function syncConfig() {
+  const cfg = window.BACKNOTES_SUPABASE || {};
+  return {
+    url: String(cfg.url || '').trim(),
+    anonKey: String(cfg.anonKey || '').trim(),
+  };
+}
+
+function canUseSync() {
+  const cfg = syncConfig();
+  return !!(cfg.url && cfg.anonKey);
+}
+
+function loadSupabaseClient() {
+  if (window.supabase?.createClient) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const existing = document.querySelector('script[data-supabase-js]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(!!window.supabase?.createClient), { once: true });
+      existing.addEventListener('error', () => resolve(false), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    script.async = true;
+    script.dataset.supabaseJs = 'true';
+    script.onload = () => resolve(!!window.supabase?.createClient);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+}
+
+function librarySnapshot() {
+  return {
+    version: 2,
+    updatedAt: new Date().toISOString(),
+    items: state.items,
+    collections: state.collections,
+  };
+}
+
+function mergeLibrarySnapshots(localData, remoteData) {
+  const itemMap = new Map();
+  [...(remoteData?.items || []), ...(localData?.items || [])].forEach(item => {
+    if (!item) return;
+    const id = item.id || uid();
+    const prev = itemMap.get(id);
+    const itemTime = Number(item.updatedAt || item.createdAt || 0);
+    const prevTime = Number(prev?.updatedAt || prev?.createdAt || 0);
+    if (!prev || itemTime >= prevTime) itemMap.set(id, { ...item, id });
+  });
+  const colMap = new Map();
+  [...syncDefaultCollections(remoteData?.collections || []), ...(localData?.collections || [])].forEach(col => {
+    if (col?.id) colMap.set(col.id, col);
+  });
+  return {
+    items: [...itemMap.values()],
+    collections: syncDefaultCollections([...colMap.values()]),
+  };
+}
+
+function applyLibraryData(data) {
+  if (!data || !Array.isArray(data.items)) return false;
+  state.items = data.items;
+  state.collections = syncDefaultCollections(Array.isArray(data.collections) ? data.collections : state.collections);
+  state.activeCol = 'all';
+  state.activeKind = 'all';
+  state.activeTag = null;
+  state.selectedIds = [];
+  state.selectMode = false;
+  suppressCloudPush = true;
+  persist();
+  setTimeout(() => { suppressCloudPush = false; }, 400);
+  return true;
+}
+
+function setSyncStatus(status, error = '') {
+  syncState.status = status;
+  syncState.lastError = error;
+  renderApp();
+}
+
+function syncLabel() {
+  if (!syncState.configured) return 'Configurar';
+  if (!syncState.user) return 'Entrar';
+  if (syncState.busy) return 'Sync...';
+  return 'Sync';
+}
+
+function syncTitle() {
+  if (!syncState.configured) return 'Configurar Supabase';
+  if (!syncState.user) return 'Entrar para sincronizar';
+  return syncState.lastSync ? `Sincronizado ${formatDate(syncState.lastSync)}` : 'Sincronizar agora';
+}
+
+function scheduleCloudPush() {
+  if (suppressCloudPush || !syncState.client || !syncState.user) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => pushLibraryToCloud({ silent: true }), 1200);
+}
+
+async function pushLibraryToCloud({ silent = false } = {}) {
+  if (!syncState.client || !syncState.user || syncState.busy) return;
+  syncState.busy = true;
+  if (!silent) setSyncStatus('syncing');
+  try {
+    const { error } = await syncState.client.from(SYNC_TABLE).upsert({
+      user_id: syncState.user.id,
+      data: librarySnapshot(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' });
+    if (error) throw error;
+    syncState.lastSync = Date.now();
+    syncState.status = 'online';
+    syncState.lastError = '';
+    if (!silent) showToast('Biblioteca sincronizada');
+  } catch (err) {
+    console.error(err);
+    syncState.status = 'error';
+    syncState.lastError = err.message || 'Erro de sincronizacao';
+    if (!silent) showToast('Nao foi possivel sincronizar');
+  } finally {
+    syncState.busy = false;
+    renderApp();
+  }
+}
+
+async function pullLibraryFromCloud({ merge = true, silent = false } = {}) {
+  if (!syncState.client || !syncState.user || syncState.busy) return;
+  syncState.busy = true;
+  if (!silent) setSyncStatus('syncing');
+  try {
+    const { data, error } = await syncState.client
+      .from(SYNC_TABLE)
+      .select('data,updated_at')
+      .eq('user_id', syncState.user.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.data) {
+      const nextData = merge ? mergeLibrarySnapshots(librarySnapshot(), data.data) : data.data;
+      applyLibraryData(nextData);
+    }
+    syncState.lastSync = Date.now();
+    syncState.status = 'online';
+    syncState.lastError = '';
+    syncState.busy = false;
+    await pushLibraryToCloud({ silent: true });
+    syncState.busy = true;
+  } catch (err) {
+    console.error(err);
+    syncState.status = 'error';
+    syncState.lastError = err.message || 'Erro de sincronizacao';
+    if (!silent) showToast('Nao foi possivel baixar o sync');
+  } finally {
+    syncState.busy = false;
+    renderAll();
+  }
+}
+
+async function initSync() {
+  syncState.configured = canUseSync();
+  if (!syncState.configured) {
+    syncState.status = 'offline';
+    renderApp();
+    return;
+  }
+  const cfg = syncConfig();
+  const loaded = await loadSupabaseClient();
+  if (!loaded) {
+    syncState.status = 'error';
+    syncState.lastError = 'Nao foi possivel carregar o Supabase JS';
+    renderApp();
+    return;
+  }
+  syncState.client = window.supabase.createClient(cfg.url, cfg.anonKey, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  });
+  const { data } = await syncState.client.auth.getSession();
+  syncState.user = data.session?.user || null;
+  syncState.status = syncState.user ? 'online' : 'offline';
+  syncState.client.auth.onAuthStateChange((_event, session) => {
+    syncState.user = session?.user || null;
+    syncState.status = syncState.user ? 'online' : 'offline';
+    renderAll();
+    if (syncState.user) pullLibraryFromCloud({ silent: true });
+  });
+  renderApp();
+  if (syncState.user) await pullLibraryFromCloud({ silent: true });
 }
 
 // ============ THUMB ENRICHMENT ============
@@ -1750,6 +1953,7 @@ function renderApp() {
         <div class="sidebar-foot">
           <button data-action="export-library" title="Exportar tudo como JSON">${icon('download', 14)}<span>Exportar</span></button>
           <button data-action="import-library" title="Importar JSON">${icon('upload', 14)}<span>Importar</span></button>
+          <button data-action="open-sync" title="${esc(syncTitle())}">${icon('upload', 14)}<span>${esc(syncLabel())}</span></button>
           <button class="tweaks-trigger" data-action="open-tweaks" title="Ajustes—paleta, ritmo, voz" aria-label="Abrir Tweaks">${icon('sliders', 14)}</button>
         </div>
 
@@ -2478,6 +2682,108 @@ function renderSearchOverlay() {
       </div>
     </div>
   `;
+}
+
+function closeSyncPanel() {
+  const root = $('#confirm-root');
+  if (root) root.innerHTML = '';
+}
+
+function renderSyncPanel() {
+  const root = $('#confirm-root');
+  if (!root) return;
+  const configured = syncState.configured;
+  const userEmail = syncState.user?.email || '';
+  root.innerHTML = `
+    <div class="overlay center sync-overlay" data-sync-overlay>
+      <div class="panel sync-panel" data-stop-prop role="dialog" aria-modal="true" aria-label="Sincronizacao Supabase">
+        <div class="modal-head">
+          <span class="modal-head-label">Sync Supabase</span>
+          <button class="icon-btn" data-action="close-sync" title="Fechar">${icon('x', 17)}</button>
+        </div>
+        <div class="sync-body">
+          ${configured ? `
+            ${!syncState.client && syncState.lastError ? `
+              <p class="sync-copy">${esc(syncState.lastError)}</p>
+              <ol class="sync-steps">
+                <li>Confira sua conexao com a internet.</li>
+                <li>Recarregue o app e tente novamente.</li>
+              </ol>
+            ` : syncState.user ? `
+              <div class="sync-status-card">
+                <strong>${esc(userEmail)}</strong>
+                <span>${syncState.busy ? 'Sincronizando...' : syncState.lastSync ? `Ultimo sync: ${esc(formatDate(syncState.lastSync))}` : 'Pronto para sincronizar'}</span>
+                ${syncState.lastError ? `<small>${esc(syncState.lastError)}</small>` : ''}
+              </div>
+              <div class="sync-actions">
+                <button class="sync-btn primary" data-action="sync-now">${icon('upload', 15)}<span>Sincronizar agora</span></button>
+                <button class="sync-btn" data-action="sync-logout">${icon('x', 15)}<span>Sair</span></button>
+              </div>
+            ` : `
+              <p class="sync-copy">Entre para sincronizar esta biblioteca entre computador e celular.</p>
+              <label class="field-label" for="sync-email">E-mail</label>
+              <input class="sync-input" id="sync-email" type="email" autocomplete="email" placeholder="voce@email.com">
+              <label class="field-label" for="sync-password">Senha</label>
+              <input class="sync-input" id="sync-password" type="password" autocomplete="current-password" placeholder="minimo 6 caracteres">
+              <div class="sync-actions">
+                <button class="sync-btn primary" data-action="sync-login">${icon('check-circle', 15)}<span>Entrar</span></button>
+                <button class="sync-btn" data-action="sync-signup">${icon('plus', 15)}<span>Criar conta</span></button>
+              </div>
+            `}
+          ` : `
+            <p class="sync-copy">O Supabase ainda nao esta configurado neste site.</p>
+            <ol class="sync-steps">
+              <li>Crie um projeto no Supabase.</li>
+              <li>Rode o arquivo <code>supabase-schema.sql</code> no SQL Editor.</li>
+              <li>Preencha <code>supabase-config.js</code> com a URL e a anon key.</li>
+            </ol>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+  setTimeout(() => $('#sync-email')?.focus(), 60);
+}
+
+async function handleSyncAuth(mode) {
+  if (!syncState.client) { renderSyncPanel(); return; }
+  const email = $('#sync-email')?.value.trim();
+  const password = $('#sync-password')?.value;
+  if (!email || !password) {
+    showToast('Informe e-mail e senha');
+    return;
+  }
+  syncState.busy = true;
+  renderSyncPanel();
+  try {
+    const res = mode === 'signup'
+      ? await syncState.client.auth.signUp({ email, password })
+      : await syncState.client.auth.signInWithPassword({ email, password });
+    if (res.error) throw res.error;
+    syncState.user = res.data.user || res.data.session?.user || null;
+    syncState.status = syncState.user ? 'online' : 'offline';
+    showToast(mode === 'signup' ? 'Conta criada. Verifique o e-mail se solicitado.' : 'Sync conectado');
+    syncState.busy = false;
+    if (syncState.user) await pullLibraryFromCloud({ silent: true });
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || 'Nao foi possivel entrar');
+  } finally {
+    syncState.busy = false;
+    renderSyncPanel();
+    renderApp();
+  }
+}
+
+async function handleSyncLogout() {
+  if (!syncState.client) return;
+  await syncState.client.auth.signOut();
+  syncState.user = null;
+  syncState.status = 'offline';
+  syncState.lastSync = null;
+  showToast('Sync desconectado');
+  renderSyncPanel();
+  renderApp();
 }
 
 function renderSearchResultsHTML() {
@@ -3267,6 +3573,12 @@ document.addEventListener('click', (e) => {
     case 'cycle-sort': cycleSortMode(); break;
     case 'export-library': exportLibrary(); break;
     case 'import-library': importLibrary(); break;
+    case 'open-sync': renderSyncPanel(); break;
+    case 'close-sync': closeSyncPanel(); break;
+    case 'sync-login': handleSyncAuth('login'); break;
+    case 'sync-signup': handleSyncAuth('signup'); break;
+    case 'sync-logout': handleSyncLogout(); break;
+    case 'sync-now': pullLibraryFromCloud(); break;
     case 'open-tweaks':
       if (state.showSidebar) state.showSidebar = false;
       window.btnOpenTweaks?.();
@@ -3380,5 +3692,6 @@ window.addEventListener('resize', () => {
 // ============ INIT ============
 load();
 renderAll();
+initSync();
 // Backfill thumbs for existing items in the background.
 setTimeout(enrichLibrary, 800);

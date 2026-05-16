@@ -43,6 +43,24 @@ App estático em HTML, CSS e JavaScript puro para organizar links, notas, posts 
 
 Os dados ficam salvos no `localStorage` do navegador. Para fazer backup ou mover de um navegador para outro, use **Exportar** na sidebar — vai gerar um JSON que pode ser **Importado** depois.
 
+## Sync com Supabase
+
+1. Crie um projeto no Supabase.
+2. Abra o SQL Editor e rode o arquivo `supabase-schema.sql`.
+3. Em `supabase-config.js`, preencha:
+
+```js
+window.BACKNOTES_SUPABASE = {
+  url: 'https://SEU-PROJETO.supabase.co',
+  anonKey: 'SUA_ANON_KEY_PUBLICA',
+};
+```
+
+4. Publique novamente o site.
+5. No app, abra a sidebar e clique em **Sync** para criar conta/entrar.
+
+Esta primeira versão sincroniza a biblioteca como um snapshot por usuário: cards, pastas, textos, links e imagens salvas no próprio card. Arquivos grandes em IndexedDB ainda dependem do navegador local; o próximo passo é ligar esses arquivos ao Supabase Storage.
+
 ## Limitações conhecidas
 
 - **Instagram / X (Twitter)**: as páginas públicas não expõem a imagem real para scrapers sem autenticação. O app mostra um poster com gradiente da marca como fallback.

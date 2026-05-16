@@ -243,6 +243,79 @@ body.dragging-item .folder-empty { opacity: 0.7; }
 }
 .sidebar-foot button:active { background: rgba(28,24,20,0.06); }
 
+.sync-panel {
+  width: min(460px, calc(100vw - 28px));
+}
+.sync-body {
+  padding: 18px;
+}
+.sync-copy {
+  margin: 0 0 14px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.sync-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.55);
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+.sync-status-card {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.45);
+  display: grid;
+  gap: 5px;
+}
+.sync-status-card strong {
+  font-size: 15px;
+}
+.sync-status-card span,
+.sync-status-card small {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.sync-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.sync-btn {
+  flex: 1;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--rule);
+  font-size: 13px;
+  font-weight: 650;
+}
+.sync-btn.primary {
+  background: var(--primary);
+  color: var(--cream);
+  border-color: var(--primary);
+}
+.sync-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.sync-steps code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+
 /* === Main column === */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
