@@ -648,6 +648,8 @@ let state = {
   viewing: null,
   quickAdd: null,
   newFolder: null,
+  selectMode: false,
+  selectedIds: [],
   showSearch: false,
   showSidebar: false,
   loading: true,
@@ -898,6 +900,60 @@ function moveItemToCollection(itemId, collectionId, opts = {}) {
   }
 }
 
+function selectedItemSet() {
+  return new Set(state.selectedIds || []);
+}
+
+function clearSelection(opts = {}) {
+  state.selectedIds = [];
+  if (opts.exit) state.selectMode = false;
+  renderApp();
+}
+
+function toggleSelectMode(force) {
+  state.selectMode = typeof force === 'boolean' ? force : !state.selectMode;
+  if (!state.selectMode) state.selectedIds = [];
+  renderApp();
+}
+
+function toggleItemSelection(id) {
+  if (!id) return;
+  const item = state.items.find(i => i.id === id && !i.deletedAt);
+  if (!item) return;
+  const set = selectedItemSet();
+  if (set.has(id)) set.delete(id);
+  else set.add(id);
+  state.selectedIds = [...set];
+  renderApp();
+}
+
+function moveSelectedItemsToCollection(collectionId) {
+  const target = userCollections().find(c => c.id === collectionId);
+  if (!target) return;
+  const ids = new Set(state.selectedIds || []);
+  if (!ids.size) return;
+  const previous = new Map();
+  state.items = state.items.map(item => {
+    if (!ids.has(item.id) || item.deletedAt) return item;
+    previous.set(item.id, item.collection);
+    return { ...item, collection: collectionId, updatedAt: Date.now() };
+  });
+  const movedCount = previous.size;
+  state.selectedIds = [];
+  state.selectMode = false;
+  persist();
+  renderApp();
+  if (movedCount) {
+    showToast(`${movedCount} ${movedCount === 1 ? 'item movido' : 'itens movidos'} para ${target.name}`, 2400, () => {
+      state.items = state.items.map(item =>
+        previous.has(item.id) ? { ...item, collection: previous.get(item.id), updatedAt: Date.now() } : item
+      );
+      persist();
+      renderApp();
+    });
+  }
+}
+
 function addCollection() {
   state.newFolder = { name: '', icon: 'folder', color: '#87807a', editing: false };
   state.editing = null;
@@ -993,11 +1049,14 @@ function setActiveCol(id) {
   state.activeCol = id;
   state.activeTag = null;
   state.showSidebar = false;
+  state.selectedIds = [];
+  state.selectMode = false;
   renderApp();
 }
 
 function setActiveTag(tag) {
   state.activeTag = state.activeTag === tag ? null : tag;
+  state.selectedIds = [];
   renderApp();
 }
 
@@ -1419,14 +1478,43 @@ window.state = state;
 
 
 // ============ RENDER: MAIN APP ============
+function renderBulkMoveBar(folders, selectedCount) {
+  if (!state.selectMode) return '';
+  return `
+    <div class="bulk-bar">
+      <div class="bulk-status">
+        <strong>${selectedCount}</strong>
+        <span>${selectedCount === 1 ? 'card selecionado' : 'cards selecionados'}</span>
+      </div>
+      <div class="bulk-targets" aria-label="Mover selecionados para pasta">
+        ${folders.length
+          ? folders.map(col => `
+            <button class="bulk-folder-btn" data-action="bulk-move" data-id="${esc(col.id)}" title="Mover para ${esc(col.name)}">
+              <span style="color:${col.color}">${icon(col.icon, 15)}</span>
+              <span>${esc(col.name)}</span>
+            </button>
+          `).join('')
+          : '<span class="bulk-empty">Crie uma pasta para mover os cards selecionados.</span>'}
+      </div>
+      <button class="bulk-close" data-action="clear-selection" title="Sair da seleção" aria-label="Sair da seleção">${icon('x', 15)}</button>
+    </div>
+  `;
+}
+
 function renderApp() {
   revokePdfPreviewUrls('card');
+  document.body.classList.toggle('select-mode', !!state.selectMode);
   const c = collCounts();
   const cur = state.collections.find(c => c.id === state.activeCol);
   const activeColName = state.activeCol === 'all' ? 'Tudo'
     : state.activeCol === 'lixeira' ? 'Lixeira'
     : (cur?.name || 'Coleção');
   const items = filteredItems();
+  const visibleIds = new Set(items.map(i => i.id));
+  if (state.selectedIds?.some(id => !visibleIds.has(id))) {
+    state.selectedIds = state.selectedIds.filter(id => visibleIds.has(id));
+  }
+  const selectedCount = state.selectedIds?.length || 0;
   const stats = statsLine();
   const tags = tagCounts();
 
@@ -1501,6 +1589,7 @@ function renderApp() {
               ${state.activeCol !== 'all' ? `<h2 class="header-title">${esc(activeColName)}</h2>` : ''}
             </div>
             <div class="header-actions">
+              ${items.length && state.activeCol !== 'lixeira' ? `<button class="icon-btn ${state.selectMode ? 'active' : ''}" data-action="toggle-select-mode" title="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}" aria-label="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}">${icon('check-circle', 16)}</button>` : ''}
               <button class="icon-btn" data-action="export-library" title="Exportar" aria-label="Exportar JSON">${icon('download', 16)}</button>
               <button class="icon-btn" data-action="open-search" title="Buscar  ⌘K" aria-label="Buscar">${icon('search', 17)}</button>
               <button class="icon-btn primary" data-action="new-item" title="Adicionar  ⌘N" aria-label="Adicionar item">${icon('plus', 18)}</button>
@@ -1534,6 +1623,8 @@ function renderApp() {
               : `<div class="grid">${items.map((it, i) => renderCard(it, i)).join('')}</div>`}
         </section>
       </main>
+
+      ${renderBulkMoveBar(userCols, selectedCount)}
 
       <button class="fab" data-action="new-item" aria-label="Adicionar item">${icon('plus', 22)}</button>
 
@@ -1643,6 +1734,12 @@ function renderCard(item, idx) {
   const isCenteredTextPreview = item.previewStyle === 'centered-text' && item.type === 'note' && !!item.content;
   const dateLabel = formatDate(item.updatedAt || item.createdAt);
   const heroInfo = providerKey ? brandInfo(providerMeta) : null;
+  const isSelected = selectedItemSet().has(item.id);
+  const cardClass = `card variant-${variant === 'video' ? 'video' : variant === 'pdf' ? 'pdf' : item.type} ${isCenteredTextPreview ? 'variant-centered-text' : ''} ${state.selectMode ? 'select-mode-card' : ''} ${isSelected ? 'selected' : ''}`;
+  const draggableAttr = state.selectMode ? 'false' : 'true';
+  const selectMark = state.selectMode
+    ? `<span class="card-select-mark" data-action="toggle-card-select" data-id="${esc(item.id)}" aria-label="${isSelected ? 'Desmarcar card' : 'Selecionar card'}">${isSelected ? icon('check-circle', 18) : icon('circle', 18)}</span>`
+    : '';
 
   const head = `
     <div class="card-top">
@@ -1677,7 +1774,8 @@ function renderCard(item, idx) {
   // Image variant: image on top, body below
   if (variant === 'image' && item.imageData) {
     return `
-      <article class="card variant-image" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="true" style="animation-delay:${Math.min(idx * 25, 200)}ms">
+      <article class="${cardClass}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="${draggableAttr}" style="animation-delay:${Math.min(idx * 25, 200)}ms">
+        ${selectMark}
         <img class="card-image" src="${esc(item.imageData)}" alt="" draggable="false">
         <div class="card-body">
           ${head}${titleHtml}
@@ -1690,7 +1788,8 @@ function renderCard(item, idx) {
 
   if (variant === 'pdf') {
     return `
-      <article class="card variant-pdf" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="true" style="animation-delay:${Math.min(idx * 25, 200)}ms">
+      <article class="${cardClass}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="${draggableAttr}" style="animation-delay:${Math.min(idx * 25, 200)}ms">
+        ${selectMark}
         <div class="card-pdf-preview" data-pdf-preview-id="${esc(item.id)}" data-pdf-preview-scope="card" aria-hidden="true">
           <iframe title="Preview de ${esc(item.fileName || item.title || 'PDF')}" loading="lazy" tabindex="-1"></iframe>
           <div class="card-pdf-fallback">
@@ -1729,7 +1828,8 @@ function renderCard(item, idx) {
       ? `<span class="video-badge" style="background:${accent}">${esc(heroInfo.label)}${heroInfo.sub ? `<small>${esc(heroInfo.sub)}</small>` : ''}</span>`
       : '';
     return `
-      <article class="card variant-video" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="true" style="animation-delay:${Math.min(idx * 25, 200)}ms">
+      <article class="${cardClass}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="${draggableAttr}" style="animation-delay:${Math.min(idx * 25, 200)}ms">
+        ${selectMark}
         <span class="video-thumb-wrap${isVerticalSource ? ' vertical-source' : ''}">
           <img class="video-thumb" src="${esc(thumbSrc)}" alt="" draggable="false" referrerpolicy="no-referrer">
           ${badgeHtml}
@@ -1746,7 +1846,8 @@ function renderCard(item, idx) {
 
   // Default (note/link/post/file): inline content + optional link preview
   return `
-    <article class="card variant-${item.type} ${isCenteredTextPreview ? 'variant-centered-text' : ''}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="true" style="animation-delay:${Math.min(idx * 25, 200)}ms">
+    <article class="${cardClass}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="${draggableAttr}" style="animation-delay:${Math.min(idx * 25, 200)}ms">
+      ${selectMark}
       ${head}
       ${titleHtml}
       ${fileHtml}
@@ -2861,7 +2962,7 @@ document.addEventListener('click', (e) => {
     return;
   }
 
-  if (e.target.closest('[data-stop]')) return;
+  if (e.target.closest('[data-stop]') && !state.selectMode) return;
 
   // Modal-internal interactions
   if (e.target.closest('.modal-panel')) {
@@ -2914,8 +3015,15 @@ document.addEventListener('click', (e) => {
     case 'add-col': addCollection(); break;
     case 'edit-col': editCollection(id); break;
     case 'del-col': deleteCollection(id); break;
+    case 'toggle-select-mode': toggleSelectMode(); break;
+    case 'toggle-card-select': toggleItemSelection(id); break;
+    case 'clear-selection': clearSelection({ exit: true }); break;
+    case 'bulk-move': moveSelectedItemsToCollection(id); break;
     case 'new-item': openEditor(null); break;
-    case 'view': openViewer(state.items.find(i => i.id === id)); break;
+    case 'view':
+      if (state.selectMode) toggleItemSelection(id);
+      else openViewer(state.items.find(i => i.id === id));
+      break;
     case 'edit': openEditor(state.items.find(i => i.id === id)); break;
     case 'toggle-studied': toggleStudied(id); break;
     case 'open-search': openSearch(); break;
@@ -2964,6 +3072,18 @@ document.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); return; }
   if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); openEditor(null); return; }
+
+  // Textareas keep Enter as a real line break inside the item body.
+  if (e.target.id === 'f-content' && e.key === 'Enter' && !mod) {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.target;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? start;
+    el.setRangeText('\n', start, end, 'end');
+    if (modalDraft) modalDraft.content = el.value;
+    return;
+  }
 
   // Enter on the new-folder name input → submit
   if (e.target.id === 'nf-name' && e.key === 'Enter') {
