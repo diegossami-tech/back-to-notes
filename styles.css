@@ -104,6 +104,18 @@ kbd {
 .topbar-search-btn:active { background: rgba(28,24,20,0.06); }
 .topbar-add-btn { background: var(--primary); color: var(--cream); }
 .topbar-add-btn:active { transform: scale(0.96); }
+.speed-dial-source {
+  position: relative;
+}
+.speed-dial-source > svg {
+  transition: transform 0.2s ease;
+}
+.speed-dial-source.is-open {
+  z-index: 92;
+}
+.speed-dial-source.is-open > svg {
+  transform: rotate(45deg);
+}
 
 /* === Sidebar (desktop) / drawer (mobile) === */
 .sidebar {
@@ -691,6 +703,105 @@ body.dragging-item .folder-empty { opacity: 0.7; }
 .fab:active { transform: scale(0.92); }
 body.dragging-item .fab { opacity: 0; pointer-events: none; transform: translateY(20px); }
 body.select-mode .fab { opacity: 0; pointer-events: none; transform: translateY(20px); }
+
+/* ============ SPEED DIAL ============ */
+.speed-dial-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 88;
+  background: rgba(28,24,20,0);
+  backdrop-filter: blur(0);
+  -webkit-backdrop-filter: blur(0);
+  pointer-events: none;
+  animation: speedBackdropIn 0.15s ease forwards;
+}
+.speed-dial-backdrop.closing {
+  animation: speedBackdropOut 0.15s ease forwards;
+}
+.speed-dial-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 93;
+  pointer-events: none;
+}
+.speed-dial-action {
+  position: fixed;
+  left: calc(var(--fab-x) - 22px);
+  top: calc(var(--fab-y) - 22px - var(--offset));
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cream);
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(20px);
+  animation: speedActionIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: calc(var(--i) * 40ms);
+}
+.speed-dial-menu.below .speed-dial-action {
+  top: calc(var(--fab-y) - 22px + var(--offset));
+}
+.speed-dial-child {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 22px -14px rgba(28,24,20,0.55);
+}
+.speed-dial-child svg {
+  stroke-width: 1.5;
+}
+.speed-dial-label {
+  position: absolute;
+  right: 54px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px -2px rgba(28,24,20,0.15);
+}
+.speed-dial-action:hover .speed-dial-child,
+.speed-dial-action:focus-visible .speed-dial-child {
+  background: var(--primary-soft);
+}
+.speed-dial-action:focus-visible {
+  outline: none;
+}
+.speed-dial-action:focus-visible .speed-dial-child {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent), 0 10px 22px -14px rgba(28,24,20,0.55);
+}
+.speed-dial-menu.closing .speed-dial-action {
+  animation: speedActionOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: calc((2 - var(--i)) * 40ms);
+}
+@keyframes speedActionIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes speedActionOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(20px); }
+}
+@keyframes speedBackdropIn {
+  from { background: rgba(28,24,20,0); backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
+  to { background: rgba(28,24,20,0.3); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+}
+@keyframes speedBackdropOut {
+  from { background: rgba(28,24,20,0.3); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+  to { background: rgba(28,24,20,0); backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
+}
 
 /* ============ BULK SELECT BAR ============ */
 .bulk-bar {
