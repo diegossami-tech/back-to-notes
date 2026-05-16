@@ -3660,6 +3660,23 @@ function syncDraftFromDom() {
   modalDraft.content = $('#f-content')?.value ?? modalDraft.content;
 }
 
+function updateFolderSelectionUI(rowSelector, attrName, value) {
+  $$(`${rowSelector} [${attrName}]`).forEach(btn => {
+    const active = btn.getAttribute(attrName) === value;
+    btn.classList.toggle('active', active);
+    if (active) {
+      const col = state.collections.find(c => c.id === value);
+      if (col?.color) {
+        btn.style.background = col.color;
+        btn.style.borderColor = col.color;
+      }
+    } else {
+      btn.style.background = '';
+      btn.style.borderColor = '';
+    }
+  });
+}
+
 function setEditorTypeUI(type) {
   $('#url-field')?.style && ($('#url-field').style.display = ((type === 'link' || type === 'post' || type === 'file') ? '' : 'none'));
   $('#image-upload-field')?.style && ($('#image-upload-field').style.display = (type === 'image' ? '' : 'none'));
@@ -3688,20 +3705,7 @@ function changeDraftField(key, value) {
   modalDraft[key] = value;
   state.editing = { ...modalDraft, isNew: !modalDraft.id };
   if (key === 'collection') {
-    $$('#coll-row [data-coll]').forEach(btn => {
-      const active = btn.dataset.coll === value;
-      btn.classList.toggle('active', active);
-      if (active) {
-        const col = state.collections.find(c => c.id === value);
-        if (col?.color) {
-          btn.style.background = col.color;
-          btn.style.borderColor = col.color;
-        }
-      } else {
-        btn.style.background = '';
-        btn.style.borderColor = '';
-      }
-    });
+    updateFolderSelectionUI('#coll-row', 'data-coll', value);
     return;
   }
   if (key === 'type') {
@@ -3800,7 +3804,7 @@ document.addEventListener('click', (e) => {
       e.stopPropagation();
       state.quickAdd.title = $('#quick-title')?.value ?? state.quickAdd.title;
       state.quickAdd.collection = quickCollChip.dataset.quickColl;
-      renderModal();
+      updateFolderSelectionUI('#quick-coll-row', 'data-quick-coll', state.quickAdd.collection);
       return;
     }
     const nfIcon = e.target.closest('[data-nf-icon]');
