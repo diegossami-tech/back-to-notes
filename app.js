@@ -1937,7 +1937,7 @@ function renderApp() {
           <span class="brand-word"><span>Back</span><span>Notes</span></span>
         </div>
         <button class="topbar-login-btn ${syncState.user ? 'online' : ''}" data-action="open-sync" title="${esc(syncTitle())}">
-          <span>${syncState.user ? 'Sync' : 'Entrar'}</span>
+          <span>${syncState.user ? 'Logado' : 'Entrar'}</span>
         </button>
         <button class="topbar-search-btn" data-action="open-search" aria-label="Buscar">${icon('search', 17)}</button>
         <button class="topbar-add-btn" data-action="new-item" aria-label="Adicionar item">${icon('plus', 18)}</button>
@@ -1997,7 +1997,7 @@ function renderApp() {
             </div>
             <div class="header-actions">
               <button class="header-login-btn ${syncState.user ? 'online' : ''}" data-action="open-sync" title="${esc(syncTitle())}">
-                <span>${syncState.user ? 'Sync' : 'Entrar'}</span>
+                <span>${syncState.user ? 'Logado' : 'Entrar'}</span>
               </button>
               ${items.length && state.activeCol !== 'lixeira' ? `<button class="icon-btn ${state.selectMode ? 'active' : ''}" data-action="toggle-select-mode" title="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}" aria-label="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}">${icon('check-circle', 16)}</button>` : ''}
               <button class="icon-btn" data-action="export-library" title="Exportar" aria-label="Exportar JSON">${icon('download', 16)}</button>
