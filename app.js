@@ -1252,6 +1252,44 @@ async function downloadStoredFile(itemId) {
   }
 }
 
+async function openPdfReader(itemId) {
+  const item = state.items.find(i => i.id === itemId) || state.viewing;
+  if (!item?.fileStorageId || !isPdfFileLike(item)) return;
+  const root = $('#confirm-root');
+  if (!root) return;
+  revokePdfPreviewUrls('reader');
+  root.innerHTML = `
+    <div class="pdf-reader-overlay" data-action="close-pdf-reader" role="dialog" aria-label="Leitor de PDF">
+      <div class="pdf-reader-panel" data-stop-prop>
+        <div class="pdf-reader-head">
+          <div class="pdf-reader-title">
+            ${icon('file-text', 18)}
+            <span>${esc(item.fileName || item.title || 'PDF')}</span>
+          </div>
+          <div class="pdf-reader-actions">
+            <button class="view-file-download" data-action="download-file" data-id="${esc(item.id)}">${icon('download', 15)}<span>Baixar</span></button>
+            <button class="lightbox-close" data-action="close-pdf-reader" aria-label="Fechar">${icon('x', 22)}</button>
+          </div>
+        </div>
+        <div class="pdf-reader-frame pdf-preview" data-pdf-preview-id="${esc(item.id)}" data-pdf-preview-scope="reader">
+          <iframe title="Leitor de PDF" loading="lazy"></iframe>
+        </div>
+      </div>
+    </div>
+  `;
+  hydratePdfPreviews(root);
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closePdfReader(); document.removeEventListener('keydown', onKey, true); }
+  };
+  document.addEventListener('keydown', onKey, true);
+}
+
+function closePdfReader() {
+  revokePdfPreviewUrls('reader');
+  const root = $('#confirm-root');
+  if (root) root.innerHTML = '';
+}
+
 // ============ LIGHTBOX (full-screen image viewer) ============
 function openLightbox(src) {
   if (!src) return;
@@ -1811,10 +1849,14 @@ function renderViewer(root) {
   const tags = Array.isArray(item.tags) ? item.tags : [];
   const overlayKind = isMobile() ? 'bottom-sheet' : 'center';
   const hasPdfPreview = isPdfFileLike(item);
+  const modalClass = [
+    item.imageData ? 'modal-image' : '',
+    hasPdfPreview ? 'modal-pdf' : '',
+  ].filter(Boolean).join(' ');
 
   root.innerHTML = `
     <div class="overlay ${overlayKind}" data-close-overlay>
-      <div class="panel modal-panel ${item.imageData ? 'modal-image' : ''}" data-stop-prop>
+      <div class="panel modal-panel ${modalClass}" data-stop-prop>
         ${isMobile() ? '<div class="sheet-grip"></div>' : ''}
         <div class="modal-head">
           <span class="modal-head-label">${esc(formatDate(item.updatedAt || item.createdAt))}</span>
@@ -1850,7 +1892,10 @@ function renderViewer(root) {
             <div class="pdf-preview" data-pdf-preview-id="${esc(item.id)}" data-pdf-preview-scope="viewer">
               <div class="pdf-preview-head">
                 <span>${icon('file-text', 14)}<strong>Preview do PDF</strong></span>
-                <small class="pdf-preview-status">Carregando...</small>
+                <span class="pdf-preview-actions">
+                  <small class="pdf-preview-status">Carregando...</small>
+                  <button class="pdf-open-btn" data-action="open-pdf-reader" data-id="${esc(item.id)}">${icon('external', 13)}<span>Tela cheia</span></button>
+                </span>
               </div>
               <iframe title="Preview do PDF" loading="lazy"></iframe>
             </div>
@@ -2777,6 +2822,8 @@ document.addEventListener('click', (e) => {
     case 'clear-editor-image': clearEditorImage(); break;
     case 'clear-editor-file': clearEditorFile(); break;
     case 'download-file': downloadStoredFile(id); break;
+    case 'open-pdf-reader': openPdfReader(id); break;
+    case 'close-pdf-reader': closePdfReader(); break;
     case 'toggle-image-zoom': actionEl.classList.toggle('expanded'); break;
     case 'open-lightbox': openLightbox(actionEl.dataset.src); break;
     case 'close-lightbox': closeLightbox(); break;
