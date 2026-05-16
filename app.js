@@ -899,7 +899,7 @@ function moveItemToCollection(itemId, collectionId, opts = {}) {
 }
 
 function addCollection() {
-  state.newFolder = { name: '', icon: 'folder', color: '#87807a' };
+  state.newFolder = { name: '', icon: 'folder', color: '#87807a', editing: false };
   state.editing = null;
   state.viewing = null;
   state.quickAdd = null;
@@ -916,6 +916,21 @@ function saveNewFolder() {
   if (!state.newFolder) return;
   const name = ($('#nf-name')?.value || '').trim();
   if (!name) { $('#nf-name')?.focus(); return; }
+
+  if (state.newFolder.editing && state.newFolder.id) {
+    const col = state.collections.find(c => c.id === state.newFolder.id && !c.system);
+    if (!col) return;
+    col.name = name;
+    col.icon = state.newFolder.icon;
+    col.color = state.newFolder.color;
+    state.activeCol = col.id;
+    state.activeTag = null;
+    state.newFolder = null;
+    persist();
+    renderAll();
+    return;
+  }
+
   const id = 'c_' + uid();
   state.collections.push({
     id, name, system: false,
@@ -935,6 +950,23 @@ function patchNewFolder(patch) {
   const nameInput = $('#nf-name');
   state.newFolder = { ...state.newFolder, name: nameInput ? nameInput.value : state.newFolder.name, ...patch };
   renderModal();
+}
+
+function editCollection(id) {
+  const col = state.collections.find(c => c.id === id);
+  if (!col || col.system) return;
+  state.newFolder = {
+    id: col.id,
+    name: col.name,
+    icon: col.icon || 'folder',
+    color: col.color || '#87807a',
+    editing: true,
+  };
+  state.editing = null;
+  state.viewing = null;
+  state.quickAdd = null;
+  renderModal();
+  setTimeout(() => $('#nf-name')?.focus(), 60);
 }
 
 function deleteCollection(id) {
@@ -1514,7 +1546,10 @@ function renderColItem(col, active, count, deletable) {
         <span>${esc(col.name)}</span>
       </span>
       <span class="col-item-right">
-        ${deletable ? `<span class="col-delete" data-action="del-col" data-id="${esc(col.id)}" title="Apagar pasta">${icon('x', 12)}</span>` : ''}
+        ${deletable ? `
+          <span class="col-edit" data-action="edit-col" data-id="${esc(col.id)}" title="Editar nome da pasta" aria-label="Editar nome da pasta" draggable="false">${icon('feather', 12)}</span>
+          <span class="col-delete" data-action="del-col" data-id="${esc(col.id)}" title="Apagar pasta" aria-label="Apagar pasta" draggable="false">${icon('x', 12)}</span>
+        ` : ''}
         <span>${count}</span>
       </span>
     </button>
@@ -1966,6 +2001,7 @@ function renderViewer(root) {
 function renderNewFolder(root) {
   modalWasOpen = false;
   const d = state.newFolder;
+  const isEditing = !!d.editing;
   const overlayKind = isMobile() ? 'bottom-sheet' : 'center';
   const folderIcons = ['folder', 'bookmark', 'book-open', 'book-check', 'feather', 'link', 'image', 'file-text'];
   const folderColors = ['#87807a', '#3d5a47', '#6b1f2a', '#b8843d', '#5a7a4f', '#3d5a6c', '#7a5230', '#6a5687'];
@@ -1975,7 +2011,7 @@ function renderNewFolder(root) {
       <div class="panel modal-panel new-folder-panel" data-stop-prop>
         ${isMobile() ? '<div class="sheet-grip"></div>' : ''}
         <div class="modal-head">
-          <span class="modal-head-label">Nova pasta</span>
+          <span class="modal-head-label">${isEditing ? 'Editar pasta' : 'Nova pasta'}</span>
           <button class="icon-btn" style="opacity:0.55" data-action="close-new-folder" title="Fechar  ESC">${icon('x', 17)}</button>
         </div>
 
@@ -2021,7 +2057,7 @@ function renderNewFolder(root) {
           <div></div>
           <div class="modal-foot-actions">
             <button class="icon-btn" style="opacity:0.65" data-action="close-new-folder" title="Cancelar  ESC">${icon('x', 17)}</button>
-            <button class="icon-btn primary" data-action="save-new-folder" title="Criar pasta">${icon('check-circle', 17)}</button>
+            <button class="icon-btn primary" data-action="save-new-folder" title="${isEditing ? 'Salvar pasta' : 'Criar pasta'}">${icon('check-circle', 17)}</button>
           </div>
         </div>
       </div>
@@ -2858,6 +2894,7 @@ document.addEventListener('click', (e) => {
   switch (action) {
     case 'set-col': setActiveCol(id); break;
     case 'add-col': addCollection(); break;
+    case 'edit-col': editCollection(id); break;
     case 'del-col': deleteCollection(id); break;
     case 'new-item': openEditor(null); break;
     case 'view': openViewer(state.items.find(i => i.id === id)); break;
