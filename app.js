@@ -961,6 +961,7 @@ function editCollection(id) {
     icon: col.icon || 'folder',
     color: col.color || '#87807a',
     editing: true,
+    kind: col.system ? 'collection' : 'folder',
   };
   state.editing = null;
   state.viewing = null;
@@ -975,7 +976,7 @@ function deleteCollection(id) {
   confirmDialog({
     title: `Apagar “${col.name}”?`,
     message: 'A pasta será removida. Os itens dentro voltam para Links.',
-    confirmText: 'Apagar pasta',
+    confirmText: 'Deletar pasta',
     cancelText: 'Cancelar',
     danger: true,
   }).then((ok) => {
@@ -1541,6 +1542,7 @@ function renderColItem(col, active, count, options = {}) {
   const { editable = false, deletable = false, draggable = false } =
     typeof options === 'boolean' ? { editable: options, deletable: options, draggable: options } : options;
   const isDraggable = draggable; // user folders are reorderable
+  const editLabel = col.system ? 'Editar nome da coleção' : 'Editar nome da pasta';
   return `
     <button class="col-item ${active ? 'active' : ''} ${isDraggable ? 'folder-draggable' : ''}" data-action="set-col" data-id="${esc(col.id)}" data-drop-col="${esc(col.id)}" ${isDraggable ? `draggable="true" data-folder-id="${esc(col.id)}"` : ''} style="--col-color:${col.color}">
       <span class="col-item-left">
@@ -1548,9 +1550,9 @@ function renderColItem(col, active, count, options = {}) {
         <span>${esc(col.name)}</span>
       </span>
       <span class="col-item-right">
-        ${editable ? `<span class="col-edit" data-action="edit-col" data-id="${esc(col.id)}" title="Editar nome da pasta" aria-label="Editar nome da pasta" draggable="false">${icon('pencil', 12)}</span>` : ''}
+        ${editable ? `<span class="col-action col-edit" data-action="edit-col" data-id="${esc(col.id)}" data-tip="${esc(editLabel)}" title="${esc(editLabel)}" aria-label="${esc(editLabel)}" draggable="false">${icon('pencil', 12)}<span class="col-action-label">${esc(editLabel)}</span></span>` : ''}
         ${deletable ? `
-          <span class="col-delete" data-action="del-col" data-id="${esc(col.id)}" title="Apagar pasta" aria-label="Apagar pasta" draggable="false">${icon('x', 12)}</span>
+          <span class="col-action col-delete" data-action="del-col" data-id="${esc(col.id)}" data-tip="Deletar pasta" title="Deletar pasta" aria-label="Deletar pasta" draggable="false">${icon('x', 12)}<span class="col-action-label">Deletar pasta</span></span>
         ` : ''}
         <span>${count}</span>
       </span>
@@ -2004,6 +2006,7 @@ function renderNewFolder(root) {
   modalWasOpen = false;
   const d = state.newFolder;
   const isEditing = !!d.editing;
+  const editTitle = d.kind === 'collection' ? 'Editar coleção' : 'Editar pasta';
   const overlayKind = isMobile() ? 'bottom-sheet' : 'center';
   const folderIcons = ['folder', 'bookmark', 'book-open', 'book-check', 'feather', 'link', 'image', 'file-text'];
   const folderColors = ['#87807a', '#3d5a47', '#6b1f2a', '#b8843d', '#5a7a4f', '#3d5a6c', '#7a5230', '#6a5687'];
@@ -2013,7 +2016,7 @@ function renderNewFolder(root) {
       <div class="panel modal-panel new-folder-panel" data-stop-prop>
         ${isMobile() ? '<div class="sheet-grip"></div>' : ''}
         <div class="modal-head">
-          <span class="modal-head-label">${isEditing ? 'Editar pasta' : 'Nova pasta'}</span>
+          <span class="modal-head-label">${isEditing ? editTitle : 'Nova pasta'}</span>
           <button class="icon-btn" style="opacity:0.55" data-action="close-new-folder" title="Fechar  ESC">${icon('x', 17)}</button>
         </div>
 
@@ -2059,7 +2062,7 @@ function renderNewFolder(root) {
           <div></div>
           <div class="modal-foot-actions">
             <button class="icon-btn" style="opacity:0.65" data-action="close-new-folder" title="Cancelar  ESC">${icon('x', 17)}</button>
-            <button class="icon-btn primary" data-action="save-new-folder" title="${isEditing ? 'Salvar pasta' : 'Criar pasta'}">${icon('check-circle', 17)}</button>
+            <button class="icon-btn primary" data-action="save-new-folder" title="${isEditing ? `Salvar ${d.kind === 'collection' ? 'coleção' : 'pasta'}` : 'Criar pasta'}">${icon('check-circle', 17)}</button>
           </div>
         </div>
       </div>
