@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" aria-label="Backtonotes">
+  <rect width="32" height="32" rx="7" fill="var(--logo-bg, #b62f3a)"></rect>
+  
+  <path d="M 9 5 L 9 27" stroke="var(--logo-fg, #ffffff)" stroke-width="2.8" stroke-linecap="round"></path>
+  <path d="M 9 14 Q 13.5 11 17.5 11 Q 22 11 22 18 Q 22 25 17.5 25 Q 13.5 25 9 22" stroke="var(--logo-fg, #ffffff)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+</svg>
