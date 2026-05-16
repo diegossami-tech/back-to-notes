@@ -1802,7 +1802,7 @@ async function handleEditorImageUpload(file) {
     };
     if (!modalDraft.tags?.length) modalDraft.tags = ['print'];
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
-    renderModal();
+    refreshEditorImageUI();
     showToast('Foto carregada');
   } catch (err) {
     console.error(err);
@@ -1830,7 +1830,7 @@ async function attachImageToEditingItem(file, sourceLabel = 'Imagem colada') {
     };
     if (!modalDraft.tags?.length) modalDraft.tags = ['print'];
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
-    renderModal();
+    refreshEditorImageUI();
     showToast(sourceLabel);
     return true;
   } catch (err) {
@@ -1898,7 +1898,7 @@ function clearEditorImage() {
     cropRect: null,
   };
   state.editing = { ...modalDraft, isNew: !modalDraft.id };
-  renderModal();
+  refreshEditorImageUI();
 }
 
 async function downloadStoredFile(itemId) {
@@ -2510,11 +2510,7 @@ function renderModal() {
                 ${d.imageData ? `<button class="image-remove-btn" data-action="clear-editor-image" type="button">${icon('x', 14)}<span>Remover</span></button>` : ''}
               </div>
               <p class="image-upload-hint">Use fotos do celular ou computador.</p>
-              ${d.imageData ? `
-                <button class="editor-image-preview" data-action="open-lightbox" data-src="${esc(d.imageData)}" type="button" aria-label="Ver foto em tela cheia">
-                  <img src="${esc(d.imageData)}" alt="${esc(d.title || 'Foto selecionada')}" draggable="false">
-                </button>
-              ` : ''}
+              ${renderEditorImagePreview(d.imageData, d.title)}
             </div>
           </div>
 
@@ -3429,6 +3425,33 @@ function canvasToStorageDataUrl(canvas, preferPng = true) {
     if (png.length <= 4200000) return png;
   }
   return canvas.toDataURL('image/jpeg', 0.94);
+}
+
+function renderEditorImagePreview(dataUrl, title = '') {
+  return dataUrl ? `
+    <button class="editor-image-preview" data-action="open-lightbox" data-src="${esc(dataUrl)}" type="button" aria-label="Ver foto em tela cheia">
+      <img src="${esc(dataUrl)}" alt="${esc(title || 'Foto selecionada')}" draggable="false">
+    </button>
+  ` : '';
+}
+
+function refreshEditorImageUI() {
+  const field = $('#image-upload-field');
+  if (!field || !modalDraft) return;
+  const hasImage = !!modalDraft.imageData;
+  const btnText = field.querySelector('.image-upload-btn span');
+  if (btnText) btnText.textContent = hasImage ? 'Trocar foto' : 'Escolher foto';
+  const actions = field.querySelector('.image-upload-actions');
+  const removeBtn = field.querySelector('.image-remove-btn');
+  if (hasImage && !removeBtn && actions) {
+    actions.insertAdjacentHTML('beforeend', `<button class="image-remove-btn" data-action="clear-editor-image" type="button">${icon('x', 14)}<span>Remover</span></button>`);
+  }
+  if (!hasImage && removeBtn) removeBtn.remove();
+  field.querySelector('.editor-image-preview')?.remove();
+  if (hasImage) {
+    field.querySelector('.image-upload-box')?.insertAdjacentHTML('beforeend', renderEditorImagePreview(modalDraft.imageData, modalDraft.title));
+  }
+  setEditorTypeUI(modalDraft.type || 'image');
 }
 
 function compressImageDataUrl(dataUrl, maxSize = 3800) {
