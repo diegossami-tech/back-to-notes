@@ -28,6 +28,9 @@ const SORT_OPTIONS = [
 ];
 
 const STORAGE_KEY = 'biblioteca:v1';
+const FILE_DB_NAME = 'backtonotes-files';
+const FILE_DB_VERSION = 1;
+const FILE_STORE = 'files';
 
 // ============ HELPERS ============
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -43,6 +46,65 @@ function icon(name, size=16) {
 
 function getDomain(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return null; }
+}
+
+function formatBytes(bytes) {
+  const n = Number(bytes || 0);
+  if (!n) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = n;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  const precision = value >= 10 || unit === 0 ? 0 : 1;
+  return `${value.toFixed(precision)} ${units[unit]}`;
+}
+
+function openFileDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(FILE_DB_NAME, FILE_DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(FILE_STORE)) db.createObjectStore(FILE_STORE, { keyPath: 'id' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function putStoredFile(file) {
+  const db = await openFileDb();
+  const record = {
+    id: 'file_' + uid(),
+    name: file.name || 'arquivo',
+    type: file.type || 'application/octet-stream',
+    size: file.size || 0,
+    blob: file,
+    createdAt: Date.now(),
+  };
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(FILE_STORE, 'readwrite');
+    tx.objectStore(FILE_STORE).put(record);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+  return record;
+}
+
+async function getStoredFile(id) {
+  if (!id) return null;
+  const db = await openFileDb();
+  const record = await new Promise((resolve, reject) => {
+    const tx = db.transaction(FILE_STORE, 'readonly');
+    const req = tx.objectStore(FILE_STORE).get(id);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+  db.close();
+  return record;
 }
 
 function normalizeUrl(text) {
@@ -1064,6 +1126,47 @@ async function handleEditorImageUpload(file) {
   }
 }
 
+async function handleEditorFileUpload(file) {
+  if (!file) return;
+  if (!modalDraft) return;
+  try {
+    syncDraftFromDom();
+    const stored = await putStoredFile(file);
+    const titleFromFile = file.name ? file.name.replace(/\.[^.]+$/, '') : '';
+    modalDraft = {
+      ...modalDraft,
+      type: 'file',
+      title: modalDraft.title || titleFromFile,
+      fileStorageId: stored.id,
+      fileName: stored.name,
+      fileType: stored.type,
+      fileSize: stored.size,
+      url: modalDraft.url || '',
+      collection: modalDraft.collection || (state.activeCol !== 'all' ? state.activeCol : 'links'),
+    };
+    state.editing = { ...modalDraft, isNew: !modalDraft.id };
+    renderModal();
+    showToast('Arquivo carregado');
+  } catch (err) {
+    console.error(err);
+    showToast('Nao foi possivel carregar o arquivo');
+  }
+}
+
+function clearEditorFile() {
+  if (!modalDraft) return;
+  syncDraftFromDom();
+  modalDraft = {
+    ...modalDraft,
+    fileStorageId: '',
+    fileName: '',
+    fileType: '',
+    fileSize: 0,
+  };
+  state.editing = { ...modalDraft, isNew: !modalDraft.id };
+  renderModal();
+}
+
 function clearEditorImage() {
   if (!modalDraft) return;
   syncDraftFromDom();
@@ -1075,6 +1178,27 @@ function clearEditorImage() {
   };
   state.editing = { ...modalDraft, isNew: !modalDraft.id };
   renderModal();
+}
+
+async function downloadStoredFile(itemId) {
+  const item = state.items.find(i => i.id === itemId) || state.viewing;
+  if (!item?.fileStorageId) return;
+  try {
+    const record = await getStoredFile(item.fileStorageId);
+    if (!record?.blob) {
+      showToast('Arquivo nao encontrado neste navegador');
+      return;
+    }
+    const url = URL.createObjectURL(record.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = item.fileName || record.name || item.title || 'arquivo';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1200);
+  } catch (err) {
+    console.error(err);
+    showToast('Nao foi possivel abrir o arquivo');
+  }
 }
 
 // ============ LIGHTBOX (full-screen image viewer) ============
@@ -1351,6 +1475,15 @@ function renderCard(item, idx) {
   const titleHtml = `<h3 class="card-title">${item.title ? esc(item.title) : '<em style="opacity:0.5">Sem título</em>'}</h3>`;
   const tagsHtml = tags.slice(0, 3).map(t => `<span class="tag">${esc(t)}</span>`).join('') +
     (tags.length > 3 ? `<span class="tag-more">+${tags.length - 3}</span>` : '');
+  const fileHtml = item.fileStorageId ? `
+    <div class="card-file">
+      <span class="card-file-icon">${icon('folder', 16)}</span>
+      <span class="card-file-text">
+        <strong>${esc(item.fileName || item.title || 'Arquivo')}</strong>
+        <small>${esc(formatBytes(item.fileSize) || item.fileType || 'arquivo salvo')}</small>
+      </span>
+    </div>
+  ` : '';
   const studyHtml = isStudyable
     ? `<button class="study-toggle ${isStudied ? 'studied' : ''}" data-action="toggle-studied" data-id="${esc(item.id)}" title="${isStudied ? 'Para estudar' : 'Estudado'}">${icon(isStudied ? 'check-circle' : 'circle', 18)}</button>`
     : '';
@@ -1410,6 +1543,7 @@ function renderCard(item, idx) {
     <article class="card variant-${item.type}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="true" style="animation-delay:${Math.min(idx * 25, 200)}ms">
       ${head}
       ${titleHtml}
+      ${fileHtml}
       ${item.content ? `<p class="card-content">${esc(item.content)}</p>` : ''}
       ${domain && !item.imageData ? renderLinkPreview(item.url, '', item.thumbUrl) : ''}
       ${foot}
@@ -1443,6 +1577,10 @@ function renderModal() {
     content: it.content || '',
     url: it.url || '',
     imageData: it.imageData || '',
+    fileStorageId: it.fileStorageId || '',
+    fileName: it.fileName || '',
+    fileType: it.fileType || '',
+    fileSize: it.fileSize || 0,
     collection: it.collection || (isNew ? 'links' : state.collections[0].id),
     tags: Array.isArray(it.tags) ? [...it.tags] : [],
   };
@@ -1474,6 +1612,30 @@ function renderModal() {
           <div id="url-field" style="${(d.type === 'link' || d.type === 'post' || d.type === 'file') ? '' : 'display:none'}">
             <label class="field-label">${d.type === 'file' ? 'Caminho ou link' : 'Link'}</label>
             <input class="input-url" id="f-url" value="${esc(d.url)}" placeholder="${d.type === 'file' ? 'Ex: ~/Documentos/arquivo.pdf' : 'https://...'}">
+          </div>
+
+          <div id="file-upload-field" style="${d.type === 'file' ? '' : 'display:none'}">
+            <label class="field-label">Arquivo do dispositivo</label>
+            <div class="file-upload-box">
+              <input class="file-input" id="f-file" type="file">
+              <div class="file-upload-actions">
+                <label class="file-upload-btn" for="f-file">
+                  ${icon('upload', 15)}
+                  <span>${d.fileStorageId ? 'Trocar arquivo' : 'Escolher arquivo'}</span>
+                </label>
+                ${d.fileStorageId ? `<button class="file-remove-btn" data-action="clear-editor-file" type="button">${icon('x', 14)}<span>Remover</span></button>` : ''}
+              </div>
+              <p class="file-upload-hint">Salvo neste navegador. Arquivos muito grandes podem ocupar bastante espaco no celular.</p>
+              ${d.fileStorageId ? `
+                <div class="stored-file">
+                  <span class="stored-file-icon">${icon('folder', 18)}</span>
+                  <span class="stored-file-main">
+                    <strong>${esc(d.fileName || d.title || 'Arquivo')}</strong>
+                    <small>${esc([d.fileType || 'arquivo', formatBytes(d.fileSize)].filter(Boolean).join(' · '))}</small>
+                  </span>
+                </div>
+              ` : ''}
+            </div>
           </div>
 
           <div id="image-upload-field" style="${d.type === 'image' ? '' : 'display:none'}">
@@ -1586,11 +1748,26 @@ function renderViewer(root) {
 
           ${domain ? renderLinkPreview(item.url, 'view-link-preview', item.thumbUrl) : ''}
 
+          ${item.fileStorageId ? `
+            <div class="view-file">
+              <div class="view-file-main">
+                <span class="view-file-icon">${icon('folder', 22)}</span>
+                <span>
+                  <strong>${esc(item.fileName || item.title || 'Arquivo')}</strong>
+                  <small>${esc([item.fileType || 'arquivo', formatBytes(item.fileSize)].filter(Boolean).join(' · '))}</small>
+                </span>
+              </div>
+              <button class="view-file-download" data-action="download-file" data-id="${esc(item.id)}">
+                ${icon('download', 15)}<span>Baixar</span>
+              </button>
+            </div>
+          ` : ''}
+
           ${item.imageData ? `<img class="view-image" data-action="open-lightbox" data-src="${esc(item.imageData)}" src="${esc(item.imageData)}" alt="${esc(item.title || 'Imagem salva')}">` : ''}
 
           ${item.content
             ? `<div class="view-content ${item.type === 'note' ? 'serif' : ''}">${esc(item.content)}</div>`
-            : item.imageData ? '' : '<p class="view-empty">Sem anotações ainda.</p>'}
+            : (item.imageData || item.fileStorageId) ? '' : '<p class="view-empty">Sem anotações ainda.</p>'}
 
           ${tags.length ? `<div class="tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
         </div>
@@ -1737,6 +1914,16 @@ function renderQuickAdd(root) {
                   </div>
                   <div class="crop-selection" data-crop-selection></div>
                 `
+                : d.fileStorageId
+                  ? `
+                    <div class="stored-file">
+                      <span class="stored-file-icon">${icon('folder', 18)}</span>
+                      <span class="stored-file-main">
+                        <strong>${esc(d.fileName || d.title || 'Arquivo')}</strong>
+                        <small>${esc([d.fileType || 'arquivo', formatBytes(d.fileSize)].filter(Boolean).join(' · '))}</small>
+                      </span>
+                    </div>
+                  `
                 : d.url
                   ? renderLinkPreview(d.url, 'view-link-preview', d.thumbUrl)
                   : `<p class="paste-preview-text">${esc(pastePreviewText(d.content))}</p>`}
@@ -2157,6 +2344,19 @@ window.addEventListener('drop', async (e) => {
       });
       return;
     }
+    try {
+      const stored = await putStoredFile(file);
+      openQuickAdd({
+        type: 'file', title: file.name.replace(/\.[^.]+$/, ''), content: '', url: '',
+        fileStorageId: stored.id, fileName: stored.name, fileType: stored.type, fileSize: stored.size,
+        collection: state.activeCol !== 'all' ? state.activeCol : 'links',
+        tags: [], previewLabel: 'Arquivo solto',
+      });
+    } catch (err) {
+      console.error(err);
+      showToast('Nao foi possivel carregar o arquivo');
+    }
+    return;
   }
   const uri = dt.getData('text/uri-list') || dt.getData('text/plain');
   if (!uri) return;
@@ -2481,6 +2681,8 @@ document.addEventListener('click', (e) => {
     case 'apply-crop': applyImageCrop(); break;
     case 'clear-crop': clearImageCrop(); break;
     case 'clear-editor-image': clearEditorImage(); break;
+    case 'clear-editor-file': clearEditorFile(); break;
+    case 'download-file': downloadStoredFile(id); break;
     case 'toggle-image-zoom': actionEl.classList.toggle('expanded'); break;
     case 'open-lightbox': openLightbox(actionEl.dataset.src); break;
     case 'close-lightbox': closeLightbox(); break;
@@ -2581,6 +2783,10 @@ document.addEventListener('change', async (e) => {
   if (e.target.id === 'f-image') {
     const file = e.target.files?.[0];
     await handleEditorImageUpload(file);
+  }
+  if (e.target.id === 'f-file') {
+    const file = e.target.files?.[0];
+    await handleEditorFileUpload(file);
   }
 });
 
