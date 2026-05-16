@@ -918,7 +918,7 @@ function saveNewFolder() {
   if (!name) { $('#nf-name')?.focus(); return; }
 
   if (state.newFolder.editing && state.newFolder.id) {
-    const col = state.collections.find(c => c.id === state.newFolder.id && !c.system);
+    const col = state.collections.find(c => c.id === state.newFolder.id);
     if (!col) return;
     col.name = name;
     col.icon = state.newFolder.icon;
@@ -954,7 +954,7 @@ function patchNewFolder(patch) {
 
 function editCollection(id) {
   const col = state.collections.find(c => c.id === id);
-  if (!col || col.system) return;
+  if (!col) return;
   state.newFolder = {
     id: col.id,
     name: col.name,
@@ -1445,7 +1445,7 @@ function renderApp() {
 
         <div class="sidebar-section-label">Coleções</div>
         <div data-folder-area>
-          ${sysCols.map(col => renderColItem(col, state.activeCol === col.id, c[col.id] || 0, false)).join('')}
+          ${sysCols.map(col => renderColItem(col, state.activeCol === col.id, c[col.id] || 0, { editable: true })).join('')}
         </div>
 
         <div class="sidebar-divider" aria-hidden="true"></div>
@@ -1458,7 +1458,7 @@ function renderApp() {
           <div class="folder-list">
             ${userCols.length === 0
               ? '<p class="folder-empty">crie pastas para organizar do seu jeito</p>'
-              : userCols.map(col => renderColItem(col, state.activeCol === col.id, c[col.id] || 0, true)).join('')}
+              : userCols.map(col => renderColItem(col, state.activeCol === col.id, c[col.id] || 0, { editable: true, deletable: true, draggable: true })).join('')}
           </div>
         </div>
 
@@ -1537,8 +1537,10 @@ function renderApp() {
   hydratePdfPreviews($('#app'));
 }
 
-function renderColItem(col, active, count, deletable) {
-  const isDraggable = deletable; // user folders are reorderable
+function renderColItem(col, active, count, options = {}) {
+  const { editable = false, deletable = false, draggable = false } =
+    typeof options === 'boolean' ? { editable: options, deletable: options, draggable: options } : options;
+  const isDraggable = draggable; // user folders are reorderable
   return `
     <button class="col-item ${active ? 'active' : ''} ${isDraggable ? 'folder-draggable' : ''}" data-action="set-col" data-id="${esc(col.id)}" data-drop-col="${esc(col.id)}" ${isDraggable ? `draggable="true" data-folder-id="${esc(col.id)}"` : ''} style="--col-color:${col.color}">
       <span class="col-item-left">
@@ -1546,8 +1548,8 @@ function renderColItem(col, active, count, deletable) {
         <span>${esc(col.name)}</span>
       </span>
       <span class="col-item-right">
+        ${editable ? `<span class="col-edit" data-action="edit-col" data-id="${esc(col.id)}" title="Editar nome da pasta" aria-label="Editar nome da pasta" draggable="false">${icon('pencil', 12)}</span>` : ''}
         ${deletable ? `
-          <span class="col-edit" data-action="edit-col" data-id="${esc(col.id)}" title="Editar nome da pasta" aria-label="Editar nome da pasta" draggable="false">${icon('feather', 12)}</span>
           <span class="col-delete" data-action="del-col" data-id="${esc(col.id)}" title="Apagar pasta" aria-label="Apagar pasta" draggable="false">${icon('x', 12)}</span>
         ` : ''}
         <span>${count}</span>
