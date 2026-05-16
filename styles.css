@@ -110,8 +110,8 @@ kbd {
   height: 38px;
   padding: 0 16px;
   border-radius: 999px;
-  background: #11100e;
-  color: var(--paper);
+  background: var(--primary);
+  color: var(--cream);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -125,6 +125,10 @@ kbd {
 .topbar-login-btn.online,
 .header-login-btn.online {
   background: var(--primary);
+}
+.topbar-login-btn:hover,
+.header-login-btn:hover {
+  background: var(--primary-soft);
 }
 .topbar-login-btn:active,
 .header-login-btn:active {
@@ -950,6 +954,12 @@ body.dragging-item .folder-empty { opacity: 0.7; }
 .fab:active { transform: scale(0.92); }
 body.dragging-item .fab { opacity: 0; pointer-events: none; transform: translateY(20px); }
 body.select-mode .fab { opacity: 0; pointer-events: none; transform: translateY(20px); }
+@media (max-width: 767.98px) {
+  .fab,
+  .empty-btn {
+    display: none;
+  }
+}
 
 /* ============ BULK SELECT BAR ============ */
 .bulk-bar {
