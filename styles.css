@@ -1143,7 +1143,72 @@ body.ext-dragging .ext-drop-overlay { display: flex; }
   resize: vertical;
   min-height: 7em;
 }
-.textarea.serif { font-family: var(--font-serif); }
+.note-textarea {
+  transition: font-size 0.15s, text-align 0.15s;
+}
+.text-style-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.text-style-group {
+  display: flex;
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.42);
+}
+.text-style-btn {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 7px;
+  border-radius: calc(var(--r-sm) - 3px);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.text-style-btn.active {
+  background: var(--primary);
+  color: var(--cream);
+}
+.text-font-serif { font-family: var(--font-serif) !important; }
+.text-font-sans { font-family: var(--font-sans) !important; }
+.text-font-mono { font-family: var(--font-mono) !important; }
+.text-align-left { text-align: left; }
+.text-align-center {
+  text-align: center;
+  text-wrap: pretty;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+.text-align-justify {
+  text-align: justify;
+  hyphens: auto;
+}
+.textarea.text-size-small { font-size: 13.5px; }
+.textarea.text-size-normal { font-size: 14.5px; }
+.textarea.text-size-large { font-size: 16px; }
+.textarea.text-size-xlarge { font-size: 18px; }
+.card-content.text-size-small { font-size: 12.5px; }
+.card-content.text-size-normal { font-size: 14px; }
+.card-content.text-size-large { font-size: 15.5px; }
+.card-content.text-size-xlarge { font-size: 17px; }
+.view-content.text-size-small { font-size: 14px; }
+.view-content.text-size-normal { font-size: 16px; }
+.view-content.text-size-large { font-size: 18px; }
+.view-content.text-size-xlarge { font-size: 20px; }
+@media (max-width: 520px) {
+  .text-style-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .text-style-btn {
+    min-height: 34px;
+  }
+}
 .tag-chip {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 5px 10px;

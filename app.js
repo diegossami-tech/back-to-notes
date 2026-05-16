@@ -27,6 +27,26 @@ const SORT_OPTIONS = [
   { id: 'alpha',  label: 'alfabético' },
 ];
 
+const TEXT_STYLE_DEFAULT = { font: 'serif', size: 'normal', align: 'left' };
+const TEXT_STYLE_OPTIONS = {
+  font: [
+    { id: 'serif', label: 'Serif' },
+    { id: 'sans', label: 'Sans' },
+    { id: 'mono', label: 'Mono' },
+  ],
+  size: [
+    { id: 'small', label: 'P' },
+    { id: 'normal', label: 'M' },
+    { id: 'large', label: 'G' },
+    { id: 'xlarge', label: 'GG' },
+  ],
+  align: [
+    { id: 'left', label: 'Esq.' },
+    { id: 'center', label: 'Centro' },
+    { id: 'justify', label: 'Justificar' },
+  ],
+};
+
 const STORAGE_KEY = 'biblioteca:v1';
 const FILE_DB_NAME = 'backtonotes-files';
 const FILE_DB_VERSION = 1;
@@ -39,6 +59,27 @@ const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 const isEditableTarget = (el) => el?.closest?.('input, textarea, select, [contenteditable="true"]');
 const isMobile = () => window.matchMedia('(max-width: 767.98px)').matches;
+
+function normalizeTextStyle(style) {
+  const src = style && typeof style === 'object' ? style : {};
+  const pick = (group, value, fallback) =>
+    TEXT_STYLE_OPTIONS[group].some(opt => opt.id === value) ? value : fallback;
+  return {
+    font: pick('font', src.font, TEXT_STYLE_DEFAULT.font),
+    size: pick('size', src.size, TEXT_STYLE_DEFAULT.size),
+    align: pick('align', src.align, TEXT_STYLE_DEFAULT.align),
+  };
+}
+
+function isDefaultTextStyle(style) {
+  const normalized = normalizeTextStyle(style);
+  return Object.keys(TEXT_STYLE_DEFAULT).every(key => normalized[key] === TEXT_STYLE_DEFAULT[key]);
+}
+
+function textStyleClass(style) {
+  const normalized = normalizeTextStyle(style);
+  return `text-font-${normalized.font} text-size-${normalized.size} text-align-${normalized.align}`;
+}
 
 function icon(name, size=16) {
   return `<svg width="${size}" height="${size}"><use href="#i-${name}"/></svg>`;
@@ -1133,6 +1174,15 @@ function saveQuickAdd() {
   delete item.previewLabel; delete item.kind; delete item.originalImageData; delete item.cropRect;
   saveItem(item);
 }
+function editQuickAdd() {
+  if (!state.quickAdd) return;
+  const draft = { ...state.quickAdd, isNew: true };
+  delete draft.previewLabel; delete draft.kind;
+  state.quickAdd = null;
+  state.viewing = null;
+  state.editing = draft;
+  renderModal();
+}
 function openSearch() {
   state.showSearch = true;
   state.search = '';
@@ -1235,6 +1285,24 @@ function renderFolderPicker(selectedId, attrName) {
       ${esc(c.name)}
     </button>
   `).join('');
+}
+
+function renderTextStyleToolbar(style) {
+  const normalized = normalizeTextStyle(style);
+  const groupLabels = { font: 'Fonte', size: 'Tamanho', align: 'Alinhamento' };
+  return `
+    <div class="text-style-toolbar" id="text-style-toolbar">
+      ${Object.entries(TEXT_STYLE_OPTIONS).map(([group, options]) => `
+        <div class="text-style-group" aria-label="${esc(groupLabels[group])}">
+          ${options.map(opt => `
+            <button class="text-style-btn ${normalized[group] === opt.id ? 'active' : ''}" type="button" data-text-style="${esc(group)}" data-value="${esc(opt.id)}" aria-label="${esc(groupLabels[group] + ': ' + opt.label)}">
+              ${esc(opt.label)}
+            </button>
+          `).join('')}
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 // ============ EXPORT / IMPORT ============
@@ -1756,7 +1824,9 @@ function renderCard(item, idx) {
   const tags = item.tags || [];
   const hasPdfPreview = item.fileStorageId && isPdfFileLike(item);
   const variant = item.imageData ? 'image' : hasPdfPreview ? 'pdf' : isHeroVideo ? 'video' : item.type;
-  const isCenteredTextPreview = item.previewStyle === 'centered-text' && item.type === 'note' && !!item.content;
+  const hasTextStyle = item.type === 'note' && item.textStyle && !isDefaultTextStyle(item.textStyle);
+  const isCenteredTextPreview = !hasTextStyle && item.previewStyle === 'centered-text' && item.type === 'note' && !!item.content;
+  const contentStyleClass = hasTextStyle ? textStyleClass(item.textStyle) : '';
   const dateLabel = formatDate(item.updatedAt || item.createdAt);
   const heroInfo = providerKey ? brandInfo(providerMeta) : null;
   const isSelected = selectedItemSet().has(item.id);
@@ -1773,7 +1843,7 @@ function renderCard(item, idx) {
     </div>
   `;
   const titleHtml = `<h3 class="card-title">${item.title ? esc(item.title) : '<em style="opacity:0.5">Sem título</em>'}</h3>`;
-  const contentHtml = item.content ? `<p class="card-content ${isCenteredTextPreview ? 'centered-preview' : ''}">${esc(item.content)}</p>` : '';
+  const contentHtml = item.content ? `<p class="card-content ${isCenteredTextPreview ? 'centered-preview' : ''} ${contentStyleClass}">${esc(item.content)}</p>` : '';
   const tagsHtml = tags.slice(0, 3).map(t => `<span class="tag">${esc(t)}</span>`).join('') +
     (tags.length > 3 ? `<span class="tag-more">+${tags.length - 3}</span>` : '');
   const fileHtml = item.fileStorageId && !hasPdfPreview ? `
@@ -1916,8 +1986,10 @@ function renderModal() {
     fileSize: it.fileSize || 0,
     collection: it.collection || (isNew ? activeUserCollectionId() : ''),
     previewStyle: it.previewStyle || '',
+    textStyle: it.textStyle && !isDefaultTextStyle(it.textStyle) ? normalizeTextStyle(it.textStyle) : null,
     tags: Array.isArray(it.tags) ? [...it.tags] : [],
   };
+  const editorTextStyle = normalizeTextStyle(d.textStyle);
 
   const overlayKind = isMobile() ? 'bottom-sheet' : 'center';
   root.innerHTML = `
@@ -1994,7 +2066,8 @@ function renderModal() {
 
           <div>
             <label class="field-label">${d.type === 'note' ? 'Conteúdo' : 'Anotações'}</label>
-            <textarea class="textarea ${d.type === 'note' ? 'serif' : ''}" id="f-content" rows="${d.type === 'note' ? 8 : 4}" placeholder="${d.type === 'note' ? 'Escreva aqui...' : 'O que achou? Por que salvou?'}">${esc(d.content)}</textarea>
+            ${d.type === 'note' ? renderTextStyleToolbar(d.textStyle) : ''}
+            <textarea class="textarea ${d.type === 'note' ? `note-textarea ${textStyleClass(editorTextStyle)}` : ''}" id="f-content" rows="${d.type === 'note' ? 8 : 4}" placeholder="${d.type === 'note' ? 'Escreva aqui...' : 'O que achou? Por que salvou?'}">${esc(d.content)}</textarea>
             <p class="field-hint">Tambem da para colar uma imagem aqui para salvar texto e preview no mesmo item.</p>
           </div>
 
@@ -2060,6 +2133,9 @@ function renderViewer(root) {
   const tags = Array.isArray(item.tags) ? item.tags : [];
   const overlayKind = isMobile() ? 'bottom-sheet' : 'center';
   const hasPdfPreview = isPdfFileLike(item);
+  const viewTextStyleClass = item.type === 'note' && item.textStyle && !isDefaultTextStyle(item.textStyle)
+    ? textStyleClass(item.textStyle)
+    : '';
   const modalClass = [
     item.imageData ? 'modal-image' : '',
     hasPdfPreview ? 'modal-pdf' : '',
@@ -2122,7 +2198,7 @@ function renderViewer(root) {
           ${item.imageData ? `<img class="view-image" data-action="open-lightbox" data-src="${esc(item.imageData)}" src="${esc(item.imageData)}" alt="${esc(item.title || 'Imagem salva')}">` : ''}
 
           ${item.content
-            ? `<div class="view-content ${item.type === 'note' ? 'serif' : ''}">${esc(item.content)}</div>`
+            ? `<div class="view-content ${item.type === 'note' ? `serif ${viewTextStyleClass}` : ''}">${esc(item.content)}</div>`
             : (item.imageData || item.fileStorageId) ? '' : '<p class="view-empty">Sem anotações ainda.</p>'}
 
           ${tags.length ? `<div class="tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
@@ -2290,6 +2366,7 @@ function renderQuickAdd(root) {
         <div class="modal-foot">
           <span style="font-size:11px;opacity:0.5;font-style:italic;font-family:var(--font-serif)">Pronto para salvar</span>
           <div class="modal-foot-actions">
+            ${d.type === 'note' ? `<button class="icon-btn" style="opacity:0.7" data-action="edit-quick-add" title="Editar texto">${icon('feather', 17)}</button>` : ''}
             <button class="icon-btn" style="opacity:0.65" data-action="close-quick-add" title="Cancelar  ESC">${icon('x', 17)}</button>
             <button class="icon-btn primary" data-action="save-quick-add" title="Salvar">${icon('check-circle', 17)}</button>
           </div>
@@ -2948,12 +3025,18 @@ document.addEventListener('paste', async (e) => {
 // ============ MODAL DRAFT HELPERS ============
 function commitDraftFromDom() {
   if (!modalDraft) return null;
-  return {
+  const item = {
     ...modalDraft,
     title: $('#f-title')?.value.trim() || '',
     url: $('#f-url')?.value.trim() || '',
     content: $('#f-content')?.value.trim() || '',
   };
+  if (item.type !== 'note' || !item.textStyle || isDefaultTextStyle(item.textStyle)) {
+    delete item.textStyle;
+  } else {
+    item.textStyle = normalizeTextStyle(item.textStyle);
+  }
+  return item;
 }
 function syncDraftFromDom() {
   if (!modalDraft) return;
@@ -2965,6 +3048,15 @@ function changeDraftField(key, value) {
   if (!modalDraft) return;
   syncDraftFromDom();
   modalDraft[key] = value;
+  state.editing = { ...modalDraft, isNew: !modalDraft.id };
+  renderModal();
+}
+function changeDraftTextStyle(key, value) {
+  if (!modalDraft) return;
+  syncDraftFromDom();
+  const style = normalizeTextStyle(modalDraft.textStyle);
+  style[key] = value;
+  modalDraft.textStyle = isDefaultTextStyle(style) ? null : style;
   state.editing = { ...modalDraft, isNew: !modalDraft.id };
   renderModal();
 }
@@ -2997,6 +3089,8 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('.modal-panel')) {
     const typeChip = e.target.closest('#type-row [data-type]');
     if (typeChip) { e.stopPropagation(); changeDraftField('type', typeChip.dataset.type); return; }
+    const textStyleBtn = e.target.closest('[data-text-style]');
+    if (textStyleBtn) { e.stopPropagation(); changeDraftTextStyle(textStyleBtn.dataset.textStyle, textStyleBtn.dataset.value); return; }
     const collChip = e.target.closest('#coll-row [data-coll]');
     if (collChip) { e.stopPropagation(); changeDraftField('collection', collChip.dataset.coll); return; }
     const removeTagBtn = e.target.closest('[data-remove-tag]');
@@ -3071,6 +3165,7 @@ document.addEventListener('click', (e) => {
     case 'toggle-image-zoom': actionEl.classList.toggle('expanded'); break;
     case 'open-lightbox': openLightbox(actionEl.dataset.src); break;
     case 'close-lightbox': closeLightbox(); break;
+    case 'edit-quick-add': editQuickAdd(); break;
     case 'save-item': handleSave(); break;
     case 'save-quick-add': saveQuickAdd(); break;
     case 'delete-item': deleteItem(id); break;
