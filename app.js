@@ -1177,6 +1177,32 @@ async function handleEditorImageUpload(file) {
   }
 }
 
+async function attachImageToEditingItem(file, sourceLabel = 'Imagem colada') {
+  if (!file || !file.type?.startsWith('image/') || !modalDraft) return false;
+  try {
+    syncDraftFromDom();
+    const raw = await fileToDataUrl(file);
+    const imageData = await compressImageDataUrl(raw);
+    modalDraft = {
+      ...modalDraft,
+      type: 'image',
+      imageData,
+      originalImageData: imageData,
+      cropRect: null,
+      collection: modalDraft.collection || (state.activeCol !== 'all' ? state.activeCol : 'prints'),
+    };
+    if (!modalDraft.tags?.length) modalDraft.tags = ['print'];
+    state.editing = { ...modalDraft, isNew: !modalDraft.id };
+    renderModal();
+    showToast(sourceLabel);
+    return true;
+  } catch (err) {
+    console.error(err);
+    showToast('Nao foi possivel colar a imagem');
+    return false;
+  }
+}
+
 async function handleEditorFileUpload(file) {
   if (!file) return;
   if (!modalDraft) return;
@@ -1781,6 +1807,7 @@ function renderModal() {
           <div>
             <label class="field-label">${d.type === 'note' ? 'Conteúdo' : 'Anotações'}</label>
             <textarea class="textarea ${d.type === 'note' ? 'serif' : ''}" id="f-content" rows="${d.type === 'note' ? 8 : 4}" placeholder="${d.type === 'note' ? 'Escreva aqui...' : 'O que achou? Por que salvou?'}">${esc(d.content)}</textarea>
+            <p class="field-hint">Tambem da para colar uma imagem aqui para salvar texto e preview no mesmo item.</p>
           </div>
 
           <div>
@@ -2059,6 +2086,7 @@ function renderQuickAdd(root) {
                     <img src="${esc(d.imageData)}" alt="">
                   </div>
                   <div class="crop-selection" data-crop-selection></div>
+                  ${d.content ? `<p class="paste-preview-text with-image">${esc(pastePreviewText(d.content))}</p>` : ''}
                 `
                 : d.fileStorageId
                   ? `
@@ -2665,6 +2693,7 @@ document.addEventListener('pointercancel', () => { cropDrag = null; updateCropSe
 // ============ CLIPBOARD / PASTE ============
 async function draftFromClipboardData(clipboardData) {
   const items = Array.from(clipboardData?.items || []);
+  const text = clipboardData?.getData('text/plain')?.trim();
   const imageItem = items.find(it => it.type?.startsWith('image/'));
   if (imageItem) {
     const file = imageItem.getAsFile();
@@ -2672,14 +2701,13 @@ async function draftFromClipboardData(clipboardData) {
       const raw = await fileToDataUrl(file);
       const imageData = await compressImageDataUrl(raw);
       return {
-        type: 'image', title: '', content: '', url: '',
+        type: 'image', title: '', content: text || '', url: '',
         imageData, originalImageData: imageData, cropRect: null,
         collection: state.activeCol !== 'all' ? state.activeCol : 'prints',
-        tags: ['print'], previewLabel: 'Imagem colada',
+        tags: ['print'], previewLabel: text ? 'Texto e imagem colados' : 'Imagem colada',
       };
     }
   }
-  const text = clipboardData?.getData('text/plain')?.trim();
   if (!text) return null;
   const url = normalizeUrl(text);
   if (url) {
@@ -2702,9 +2730,26 @@ async function draftFromClipboardData(clipboardData) {
 }
 
 document.addEventListener('paste', async (e) => {
+  const clipboardItems = Array.from(e.clipboardData?.items || []);
+  const imageItem = clipboardItems.find(it => it.type?.startsWith('image/'));
+  if (state.editing && imageItem && isEditableTarget(e.target)) {
+    const file = imageItem.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (text && e.target.id === 'f-content') {
+      const start = e.target.selectionStart ?? e.target.value.length;
+      const end = e.target.selectionEnd ?? start;
+      e.target.value = e.target.value.slice(0, start) + text + e.target.value.slice(end);
+      const cursor = start + text.length;
+      try { e.target.setSelectionRange(cursor, cursor); } catch {}
+      if (modalDraft) modalDraft.content = e.target.value;
+    }
+    await attachImageToEditingItem(file);
+    return;
+  }
   if (state.editing || state.viewing || state.quickAdd || state.showSearch) return;
   if (isEditableTarget(e.target)) return;
-  const clipboardItems = Array.from(e.clipboardData?.items || []);
   const hasImage = clipboardItems.some(it => it.type?.startsWith('image/'));
   const hasText = !!e.clipboardData?.getData('text/plain')?.trim();
   if (!hasImage && !hasText) return;

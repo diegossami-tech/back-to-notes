@@ -939,6 +939,12 @@ body.ext-dragging .ext-drop-overlay { display: flex; }
   text-transform: uppercase; opacity: 0.55;
   margin-bottom: 7px; font-weight: 500;
 }
+.field-hint {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
 .chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 8px 12px;
@@ -1313,6 +1319,11 @@ body.ext-dragging .ext-drop-overlay { display: flex; }
   font-size: 13.5px;
   line-height: 1.55;
   font-family: var(--font-serif);
+}
+.paste-preview-text.with-image {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule-soft);
 }
 .paste-preview-image {
   display: block;
