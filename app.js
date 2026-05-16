@@ -1991,11 +1991,14 @@ function renderApp() {
 
       <main class="main">
         <header class="header">
-          <div class="header-title-row">
+          <div class="header-title-row ${state.activeCol === 'all' ? 'home' : ''}">
             <div>
               ${state.activeCol !== 'all' ? `<h2 class="header-title">${esc(activeColName)}</h2>` : ''}
             </div>
             <div class="header-actions">
+              <button class="header-login-btn ${syncState.user ? 'online' : ''}" data-action="open-sync" title="${esc(syncTitle())}">
+                <span>${syncState.user ? 'Sync' : 'Entrar'}</span>
+              </button>
               ${items.length && state.activeCol !== 'lixeira' ? `<button class="icon-btn ${state.selectMode ? 'active' : ''}" data-action="toggle-select-mode" title="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}" aria-label="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}">${icon('check-circle', 16)}</button>` : ''}
               <button class="icon-btn" data-action="export-library" title="Exportar" aria-label="Exportar JSON">${icon('download', 16)}</button>
               <button class="icon-btn" data-action="open-search" title="Buscar  ⌘K" aria-label="Buscar">${icon('search', 17)}</button>
