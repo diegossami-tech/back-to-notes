@@ -1123,249 +1123,6 @@ function openQuickAdd(draft) {
 }
 function closeQuickAdd() { state.quickAdd = null; renderModal(); }
 
-let speedDial = {
-  open: false,
-  anchor: null,
-  closeTimer: null,
-  mode: 'hover',
-  collectionId: null,
-};
-
-const SPEED_DIAL_ACTIONS = [
-  { id: 'note', label: 'Nota', aria: 'Nova nota', icon: 'file-text' },
-  { id: 'file', label: 'Arquivo/Imagem', aria: 'Subir arquivo ou imagem', icon: 'paperclip' },
-  { id: 'link', label: 'Link', aria: 'Colar link da area de transferencia', icon: 'clipboard-paste' },
-];
-
-function isTouchLike() {
-  return window.matchMedia('(hover: none), (pointer: coarse)').matches;
-}
-
-function speedDialRoot() {
-  let root = document.getElementById('speed-dial-root');
-  if (!root) {
-    root = document.createElement('div');
-    root.id = 'speed-dial-root';
-    document.body.appendChild(root);
-  }
-  return root;
-}
-
-function speedDialUrlFromText(text) {
-  return String(text || '').match(/https?:\/\/[^\s<>"']+/i)?.[0] || '';
-}
-
-function setSpeedDialExpanded(anchor, expanded) {
-  document.querySelectorAll('[data-speed-dial]').forEach(btn => {
-    const isActive = expanded && btn === anchor;
-    btn.classList.toggle('is-open', isActive);
-    btn.setAttribute('aria-expanded', isActive ? 'true' : 'false');
-  });
-}
-
-function renderSpeedDial(anchor, closing = false) {
-  if (!anchor) return;
-  const rect = anchor.getBoundingClientRect();
-  const size = Math.max(rect.width, rect.height);
-  const centerX = rect.left + rect.width / 2;
-  const centerY = rect.top + rect.height / 2;
-  const openAbove = rect.top > 220 || rect.top > window.innerHeight / 2;
-  const root = speedDialRoot();
-
-  root.innerHTML = `
-    <div class="speed-dial-backdrop ${closing ? 'closing' : 'open'}" data-speed-close></div>
-    <div class="speed-dial-menu ${openAbove ? 'above' : 'below'} ${closing ? 'closing' : 'open'}" role="menu" style="--fab-x:${centerX}px;--fab-y:${centerY}px;--fab-size:${size}px;">
-      ${SPEED_DIAL_ACTIONS.map((action, index) => `
-        <button class="speed-dial-action" role="menuitem" data-speed-action="${action.id}" aria-label="${esc(action.aria)}" style="--i:${index};--offset:${(index + 1) * 60}px;">
-          <span class="speed-dial-label">${esc(action.label)}</span>
-          <span class="speed-dial-child">${icon(action.icon, 19)}</span>
-        </button>
-      `).join('')}
-    </div>
-  `;
-
-  const menu = root.querySelector('.speed-dial-menu');
-  menu?.addEventListener('mouseenter', cancelSpeedDialClose);
-  menu?.addEventListener('mouseleave', scheduleSpeedDialClose);
-  root.querySelector('[data-speed-close]')?.addEventListener('click', () => closeSpeedDial());
-  root.querySelectorAll('[data-speed-action]').forEach(btn => {
-    btn.addEventListener('mouseenter', cancelSpeedDialClose);
-    btn.addEventListener('mouseleave', scheduleSpeedDialClose);
-    btn.addEventListener('click', () => runSpeedDialAction(btn.dataset.speedAction));
-  });
-}
-
-function openSpeedDial(anchor, mode = isTouchLike() ? 'tap' : 'hover') {
-  if (!anchor) return;
-  cancelSpeedDialClose();
-  if (speedDial.open && speedDial.anchor === anchor) return;
-  closeSpeedDial({ immediate: true, restoreFocus: false });
-  speedDial = { ...speedDial, open: true, anchor, mode, collectionId: activeUserCollectionId() };
-  setSpeedDialExpanded(anchor, true);
-  renderSpeedDial(anchor);
-  setTimeout(() => {
-    speedDialRoot().querySelector('[data-speed-action="note"]')?.focus({ preventScroll: true });
-  }, 0);
-}
-
-function closeSpeedDial(opts = {}) {
-  if (!speedDial.open && !speedDialRoot().children.length) return;
-  const anchor = speedDial.anchor;
-  cancelSpeedDialClose();
-  setSpeedDialExpanded(anchor, false);
-  const restoreAnchorFocus = () => {
-    if (opts.restoreFocus && anchor) anchor.focus({ preventScroll: true });
-  };
-  if (opts.immediate) {
-    speedDialRoot().innerHTML = '';
-    restoreAnchorFocus();
-  } else {
-    renderSpeedDial(anchor, true);
-    setTimeout(() => {
-      speedDialRoot().innerHTML = '';
-      restoreAnchorFocus();
-    }, 210);
-  }
-  speedDial.open = false;
-  speedDial.anchor = null;
-  speedDial.collectionId = null;
-}
-
-function scheduleSpeedDialClose() {
-  cancelSpeedDialClose();
-  if (speedDial.mode === 'hover') speedDial.closeTimer = setTimeout(() => closeSpeedDial(), 300);
-}
-
-function cancelSpeedDialClose() {
-  clearTimeout(speedDial.closeTimer);
-  speedDial.closeTimer = null;
-}
-
-function attachSpeedDial(anchor) {
-  if (!anchor || anchor.dataset.speedReady) return;
-  anchor.dataset.speedReady = 'true';
-  anchor.addEventListener('mouseenter', () => {
-    if (!isTouchLike()) openSpeedDial(anchor, 'hover');
-  });
-  anchor.addEventListener('mouseleave', () => {
-    if (!isTouchLike()) scheduleSpeedDialClose();
-  });
-  anchor.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (speedDial.open && speedDial.anchor === anchor) {
-      if (speedDial.mode === 'tap' || isTouchLike()) closeSpeedDial({ restoreFocus: false });
-      else speedDialRoot().querySelector('[data-speed-action="note"]')?.focus({ preventScroll: true });
-      return;
-    }
-    else openSpeedDial(anchor, 'tap');
-  });
-}
-
-function setupSpeedDials() {
-  document.querySelectorAll('[data-speed-dial]').forEach(attachSpeedDial);
-}
-
-document.addEventListener('pointerdown', (event) => {
-  if (!speedDial.open) return;
-  const target = event.target;
-  if (target.closest?.('.speed-dial-menu') || target.closest?.('[data-speed-dial]')) return;
-  closeSpeedDial();
-}, true);
-
-async function addFilesFromPicker(files, collectionId = activeUserCollectionId()) {
-  const list = Array.from(files || []);
-  if (!list.length) return;
-  const now = Date.now();
-  const created = [];
-  for (const [index, file] of list.entries()) {
-    const title = (file.name || 'arquivo').replace(/\.[^.]+$/, '') || file.name || 'arquivo';
-    const timestamp = now + index;
-    if (file.type?.startsWith('image/')) {
-      const raw = await fileToDataUrl(file);
-      const imageData = await compressImageDataUrl(raw);
-      created.push({
-        type: 'image',
-        title,
-        content: `Tipo: ${file.type || 'imagem'}\nTamanho: ${formatBytes(file.size) || '0 B'}`,
-        url: '',
-        imageData,
-        originalImageData: imageData,
-        cropRect: null,
-        collection: collectionId,
-        tags: ['print'],
-        id: uid(),
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      });
-      continue;
-    }
-    const stored = await putStoredFile(file);
-    created.push({
-      type: 'file',
-      title,
-      content: `Tipo: ${stored.type || 'arquivo'}\nTamanho: ${formatBytes(stored.size) || '0 B'}`,
-      url: '',
-      fileStorageId: stored.id,
-      fileName: stored.name,
-      fileType: stored.type,
-      fileSize: stored.size,
-      collection: collectionId,
-      tags: [],
-      id: uid(),
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-  }
-  state.items = [...created.reverse(), ...state.items];
-  persist();
-  renderAll();
-  showToast(`${created.length} ${created.length === 1 ? 'item adicionado' : 'itens adicionados'}`);
-}
-
-function openFileSpeedPicker(collectionId = activeUserCollectionId()) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.multiple = true;
-  input.onchange = async () => {
-    try {
-      await addFilesFromPicker(input.files, collectionId);
-    } catch (err) {
-      console.error(err);
-      showToast('Nao foi possivel subir o arquivo');
-    }
-  };
-  input.click();
-}
-
-async function openClipboardLinkEditor(collectionId = activeUserCollectionId()) {
-  let text = '';
-  try {
-    text = await navigator.clipboard?.readText?.() || '';
-  } catch {}
-  const url = speedDialUrlFromText(text);
-  if (url) {
-    const domain = getDomain(url) || url;
-    openEditor({ isNew: true, type: 'link', title: domain, url, content: '', collection: collectionId, tags: [] });
-    scheduleOEmbedFill(url);
-    return;
-  }
-  openEditor({ isNew: true, type: 'link', title: '', url: '', content: '', collection: collectionId, tags: [] });
-  setTimeout(() => $('#f-url')?.focus(), 80);
-}
-
-function runSpeedDialAction(actionId) {
-  const collectionId = speedDial.collectionId || activeUserCollectionId();
-  closeSpeedDial({ immediate: true });
-  if (actionId === 'note') {
-    openEditor({ isNew: true, type: 'note', title: '', content: '', url: '', collection: collectionId, tags: [] });
-  } else if (actionId === 'file') {
-    openFileSpeedPicker(collectionId);
-  } else if (actionId === 'link') {
-    openClipboardLinkEditor(collectionId);
-  }
-}
-
 function saveQuickAdd() {
   if (!state.quickAdd) return;
   const title = $('#quick-title')?.value.trim();
@@ -1799,7 +1556,7 @@ function renderApp() {
           backtonotes
         </div>
         <button class="topbar-search-btn" data-action="open-search" aria-label="Buscar">${icon('search', 17)}</button>
-        <button class="topbar-add-btn speed-dial-source" data-speed-dial aria-haspopup="menu" aria-expanded="false" aria-label="Adicionar item">${icon('plus', 18)}</button>
+        <button class="topbar-add-btn" data-action="new-item" aria-label="Adicionar item">${icon('plus', 18)}</button>
       </header>
 
       <!-- Sidebar / drawer -->
@@ -1858,7 +1615,7 @@ function renderApp() {
               ${items.length && state.activeCol !== 'lixeira' ? `<button class="icon-btn ${state.selectMode ? 'active' : ''}" data-action="toggle-select-mode" title="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}" aria-label="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}">${icon('check-circle', 16)}</button>` : ''}
               <button class="icon-btn" data-action="export-library" title="Exportar" aria-label="Exportar JSON">${icon('download', 16)}</button>
               <button class="icon-btn" data-action="open-search" title="Buscar  ⌘K" aria-label="Buscar">${icon('search', 17)}</button>
-              <button class="icon-btn primary speed-dial-source" data-speed-dial aria-haspopup="menu" aria-expanded="false" title="Adicionar  ⌘N" aria-label="Adicionar item">${icon('plus', 18)}</button>
+              <button class="icon-btn primary" data-action="new-item" title="Adicionar  ⌘N" aria-label="Adicionar item">${icon('plus', 18)}</button>
             </div>
           </div>
         </header>
@@ -1892,7 +1649,7 @@ function renderApp() {
 
       ${renderBulkMoveBar(userCols, selectedCount)}
 
-      <button class="fab speed-dial-source" data-speed-dial aria-haspopup="menu" aria-expanded="false" aria-label="Adicionar item">${icon('plus', 22)}</button>
+      <button class="fab" data-action="new-item" aria-label="Adicionar item">${icon('plus', 22)}</button>
 
       <!-- Mobile drop bar (visible while dragging on mobile) -->
       <div class="drop-bar" id="drop-bar">
@@ -1915,7 +1672,6 @@ function renderApp() {
     </div>
   `;
   hydratePdfPreviews($('#app'));
-  setupSpeedDials();
 }
 
 function renderColItem(col, active, count, options = {}) {
@@ -1949,7 +1705,7 @@ function renderEmpty(isNew) {
       <div class="empty">
         <div class="empty-mark">${icon('library', 26)}</div>
         <p class="empty-text">nada por aqui ainda</p>
-      <button class="empty-btn speed-dial-source" data-speed-dial aria-haspopup="menu" aria-expanded="false" aria-label="Adicionar item" title="Adicionar item">${icon('plus', 22)}</button>
+      <button class="empty-btn" data-action="new-item" aria-label="Adicionar item" title="Adicionar item">${icon('plus', 22)}</button>
       </div>
     `;
   }
@@ -1965,7 +1721,7 @@ function renderEmpty(isNew) {
         <span class="empty-shortcut-dot"></span>
         <span><kbd>⌘</kbd> <kbd>K</kbd> buscar</span>
       </div>
-      <button class="empty-btn primary speed-dial-source" data-speed-dial aria-haspopup="menu" aria-expanded="false" aria-label="Adicionar item" title="Adicionar item">${icon('plus', 22)}</button>
+      <button class="empty-btn primary" data-action="new-item" aria-label="Adicionar item" title="Adicionar item">${icon('plus', 22)}</button>
     </div>
   `;
 }
@@ -3389,8 +3145,7 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (e.key === 'Escape') {
-    if (speedDial.open) closeSpeedDial({ restoreFocus: true });
-    else if (state.editing) closeEditor();
+    if (state.editing) closeEditor();
     else if (state.viewing) closeViewer();
     else if (state.quickAdd) closeQuickAdd();
     else if (state.newFolder) closeNewFolder();
