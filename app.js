@@ -1920,6 +1920,9 @@ function renderApp() {
         <div class="topbar-brand" data-action="set-col" data-id="all" role="button" tabindex="0">
           <span class="brand-word"><span>Back</span><span>Notes</span></span>
         </div>
+        <button class="topbar-login-btn ${syncState.user ? 'online' : ''}" data-action="open-sync" title="${esc(syncTitle())}">
+          <span>${syncState.user ? 'Sync' : 'Entrar'}</span>
+        </button>
         <button class="topbar-search-btn" data-action="open-search" aria-label="Buscar">${icon('search', 17)}</button>
         <button class="topbar-add-btn" data-action="new-item" aria-label="Adicionar item">${icon('plus', 18)}</button>
       </header>
@@ -1961,7 +1964,7 @@ function renderApp() {
         <div class="sidebar-foot">
           <button data-action="export-library" title="Exportar tudo como JSON">${icon('download', 14)}<span>Exportar</span></button>
           <button data-action="import-library" title="Importar JSON">${icon('upload', 14)}<span>Importar</span></button>
-          <button data-action="open-sync" title="${esc(syncTitle())}">${icon('upload', 14)}<span>${esc(syncLabel())}</span></button>
+          <button class="sidebar-sync-btn" data-action="open-sync" title="${esc(syncTitle())}">${icon('upload', 14)}<span>${esc(syncLabel())}</span></button>
           <button class="tweaks-trigger" data-action="open-tweaks" title="Ajustes—paleta, ritmo, voz" aria-label="Abrir Tweaks">${icon('sliders', 14)}</button>
         </div>
 
@@ -2706,13 +2709,16 @@ function renderSyncPanel() {
     <div class="overlay center sync-overlay" data-sync-overlay>
       <div class="panel sync-panel" data-stop-prop role="dialog" aria-modal="true" aria-label="Sincronizacao Supabase">
         <div class="modal-head">
-          <span class="modal-head-label">Sync Supabase</span>
+          <span class="modal-head-label">BackNotes Sync</span>
           <button class="icon-btn" data-action="close-sync" title="Fechar">${icon('x', 17)}</button>
         </div>
         <div class="sync-body">
           ${configured ? `
             ${!syncState.client && syncState.lastError ? `
-              <p class="sync-copy">${esc(syncState.lastError)}</p>
+              <div class="sync-hero">
+                <h2>Conexao indisponivel</h2>
+                <p>${esc(syncState.lastError)}</p>
+              </div>
               <ol class="sync-steps">
                 <li>Confira sua conexao com a internet.</li>
                 <li>Recarregue o app e tente novamente.</li>
@@ -2728,7 +2734,15 @@ function renderSyncPanel() {
                 <button class="sync-btn" data-action="sync-logout">${icon('x', 15)}<span>Sair</span></button>
               </div>
             ` : `
-              <p class="sync-copy">Entre para sincronizar esta biblioteca entre computador e celular.</p>
+              <div class="sync-hero">
+                <h2>Entre ou crie uma conta</h2>
+                <p>Sincronize suas notas, links, prints e arquivos entre o computador e o celular.</p>
+              </div>
+              <button class="sync-google-btn" data-action="sync-google" type="button">
+                <span class="sync-google-mark">G</span>
+                <span>Continuar com o Google</span>
+              </button>
+              <div class="sync-divider"><span>ou</span></div>
               <label class="field-label" for="sync-email">E-mail</label>
               <input class="sync-input" id="sync-email" type="email" autocomplete="email" placeholder="voce@email.com">
               <label class="field-label" for="sync-password">Senha</label>
@@ -2739,7 +2753,10 @@ function renderSyncPanel() {
               </div>
             `}
           ` : `
-            <p class="sync-copy">O Supabase ainda nao esta configurado neste site.</p>
+            <div class="sync-hero">
+              <h2>Configure o sync</h2>
+              <p>O Supabase ainda nao esta configurado neste site.</p>
+            </div>
             <ol class="sync-steps">
               <li>Crie um projeto no Supabase.</li>
               <li>Rode o arquivo <code>supabase-schema.sql</code> no SQL Editor.</li>
@@ -2751,6 +2768,26 @@ function renderSyncPanel() {
     </div>
   `;
   setTimeout(() => $('#sync-email')?.focus(), 60);
+}
+
+async function handleSyncGoogle() {
+  if (!syncState.client) { renderSyncPanel(); return; }
+  syncState.busy = true;
+  renderSyncPanel();
+  try {
+    const { error } = await syncState.client.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.href.split('#')[0] },
+    });
+    if (error) throw error;
+  } catch (err) {
+    console.error(err);
+    syncState.lastError = readableSyncError(err);
+    showToast(syncState.lastError || 'Nao foi possivel entrar com Google');
+    syncState.busy = false;
+    renderSyncPanel();
+    renderApp();
+  }
 }
 
 async function handleSyncAuth(mode) {
@@ -3523,6 +3560,11 @@ document.addEventListener('click', (e) => {
     if (state.showSearch) closeSearch();
     return;
   }
+  const syncOverlay = e.target.closest('[data-sync-overlay]');
+  if (syncOverlay && !e.target.closest('[data-stop-prop]')) {
+    closeSyncPanel();
+    return;
+  }
 
   // Generic action dispatcher
   const actionEl = e.target.closest('[data-action]');
@@ -3584,6 +3626,7 @@ document.addEventListener('click', (e) => {
     case 'import-library': importLibrary(); break;
     case 'open-sync': renderSyncPanel(); break;
     case 'close-sync': closeSyncPanel(); break;
+    case 'sync-google': handleSyncGoogle(); break;
     case 'sync-login': handleSyncAuth('login'); break;
     case 'sync-signup': handleSyncAuth('signup'); break;
     case 'sync-logout': handleSyncLogout(); break;
