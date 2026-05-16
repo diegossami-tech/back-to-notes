@@ -15,6 +15,7 @@ App estático em HTML, CSS e JavaScript puro para organizar links, notas, posts 
 - **Drag-and-drop** entre coleções (HTML5 nativo no desktop, long-press no celular)
 - **Quick-add por clipboard** — cole link / texto / imagem em qualquer lugar
 - **Drop externo** — arraste URLs ou arquivos do desktop direto pra dentro
+- **Upload de fotos** — escolha imagens do celular ou computador pelo editor
 - **Previews ricos** para YouTube, Vimeo, Twitch, Spotify, Instagram, TikTok, X — com thumb real quando o provedor permite
 - **Busca global** com `⌘K` / `Ctrl+K`
 - **Filtro por tag + sort** (recentes / mais antigos / alfa)
@@ -51,4 +52,3 @@ Os dados ficam salvos no `localStorage` do navegador. Para fazer backup ou mover
 ## Tecnologia
 
 Vanilla JS, sem frameworks ou build step. Funciona em qualquer navegador moderno. Sem cookies, sem rastreamento, sem servidor — tudo no cliente.
-

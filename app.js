@@ -1034,6 +1034,49 @@ function importLibrary() {
   input.click();
 }
 
+async function handleEditorImageUpload(file) {
+  if (!file || !file.type?.startsWith('image/')) {
+    showToast('Escolha uma imagem valida');
+    return;
+  }
+  if (!modalDraft) return;
+  try {
+    syncDraftFromDom();
+    const raw = await fileToDataUrl(file);
+    const imageData = await compressImageDataUrl(raw);
+    const titleFromFile = file.name ? file.name.replace(/\.[^.]+$/, '') : '';
+    modalDraft = {
+      ...modalDraft,
+      type: 'image',
+      title: modalDraft.title || titleFromFile,
+      imageData,
+      originalImageData: imageData,
+      cropRect: null,
+      collection: modalDraft.collection || (state.activeCol !== 'all' ? state.activeCol : 'prints'),
+    };
+    if (!modalDraft.tags?.length) modalDraft.tags = ['print'];
+    state.editing = { ...modalDraft, isNew: !modalDraft.id };
+    renderModal();
+    showToast('Foto carregada');
+  } catch (err) {
+    console.error(err);
+    showToast('Nao foi possivel carregar a foto');
+  }
+}
+
+function clearEditorImage() {
+  if (!modalDraft) return;
+  syncDraftFromDom();
+  modalDraft = {
+    ...modalDraft,
+    imageData: '',
+    originalImageData: '',
+    cropRect: null,
+  };
+  state.editing = { ...modalDraft, isNew: !modalDraft.id };
+  renderModal();
+}
+
 // ============ LIGHTBOX (full-screen image viewer) ============
 function openLightbox(src) {
   if (!src) return;
@@ -1431,6 +1474,26 @@ function renderModal() {
           <div id="url-field" style="${(d.type === 'link' || d.type === 'post' || d.type === 'file') ? '' : 'display:none'}">
             <label class="field-label">${d.type === 'file' ? 'Caminho ou link' : 'Link'}</label>
             <input class="input-url" id="f-url" value="${esc(d.url)}" placeholder="${d.type === 'file' ? 'Ex: ~/Documentos/arquivo.pdf' : 'https://...'}">
+          </div>
+
+          <div id="image-upload-field" style="${d.type === 'image' ? '' : 'display:none'}">
+            <label class="field-label">Foto</label>
+            <div class="image-upload-box">
+              <input class="image-file-input" id="f-image" type="file" accept="image/*">
+              <div class="image-upload-actions">
+                <label class="image-upload-btn" for="f-image">
+                  ${icon('upload', 15)}
+                  <span>${d.imageData ? 'Trocar foto' : 'Escolher foto'}</span>
+                </label>
+                ${d.imageData ? `<button class="image-remove-btn" data-action="clear-editor-image" type="button">${icon('x', 14)}<span>Remover</span></button>` : ''}
+              </div>
+              <p class="image-upload-hint">Use fotos do celular ou computador.</p>
+              ${d.imageData ? `
+                <button class="editor-image-preview" data-action="open-lightbox" data-src="${esc(d.imageData)}" type="button" aria-label="Ver foto em tela cheia">
+                  <img src="${esc(d.imageData)}" alt="${esc(d.title || 'Foto selecionada')}" draggable="false">
+                </button>
+              ` : ''}
+            </div>
           </div>
 
           <div>
@@ -2348,6 +2411,7 @@ document.addEventListener('click', (e) => {
     case 'save-new-folder': saveNewFolder(); break;
     case 'apply-crop': applyImageCrop(); break;
     case 'clear-crop': clearImageCrop(); break;
+    case 'clear-editor-image': clearEditorImage(); break;
     case 'toggle-image-zoom': actionEl.classList.toggle('expanded'); break;
     case 'open-lightbox': openLightbox(actionEl.dataset.src); break;
     case 'close-lightbox': closeLightbox(); break;
@@ -2441,6 +2505,13 @@ document.addEventListener('input', (e) => {
     state.newFolder.name = e.target.value;
     const preview = document.querySelector('.nf-preview-row .col-item-left span:last-child');
     if (preview) preview.textContent = e.target.value.trim() || 'Sua pasta';
+  }
+});
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id === 'f-image') {
+    const file = e.target.files?.[0];
+    await handleEditorImageUpload(file);
   }
 });
 
