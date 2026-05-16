@@ -107,6 +107,49 @@ async function getStoredFile(id) {
   return record;
 }
 
+const pdfPreviewUrls = new Set();
+
+function isPdfFileLike(file) {
+  if (!file) return false;
+  const type = String(file.fileType || file.type || '').toLowerCase();
+  const name = String(file.fileName || file.name || '').toLowerCase();
+  return type === 'application/pdf' || name.endsWith('.pdf');
+}
+
+function revokePdfPreviewUrls() {
+  pdfPreviewUrls.forEach(url => URL.revokeObjectURL(url));
+  pdfPreviewUrls.clear();
+}
+
+async function hydratePdfPreviews(root = document) {
+  const previews = $$('[data-pdf-preview-id]', root);
+  for (const preview of previews) {
+    const item = state.items.find(i => i.id === preview.dataset.pdfPreviewId) || state.viewing;
+    const frame = $('iframe', preview);
+    const status = $('.pdf-preview-status', preview);
+    if (!item?.fileStorageId || !frame) continue;
+    try {
+      const record = await getStoredFile(item.fileStorageId);
+      if (!record?.blob || !isPdfFileLike({ ...item, type: record.type, name: record.name })) {
+        if (status) status.textContent = 'PDF nao encontrado neste navegador.';
+        continue;
+      }
+      const url = URL.createObjectURL(record.blob);
+      if (!document.body.contains(preview)) {
+        URL.revokeObjectURL(url);
+        continue;
+      }
+      pdfPreviewUrls.add(url);
+      frame.src = `${url}#toolbar=0&navpanes=0`;
+      preview.classList.add('is-loaded');
+      if (status) status.textContent = 'Preview carregado.';
+    } catch (err) {
+      console.error(err);
+      if (status) status.textContent = 'Nao foi possivel carregar a previa.';
+    }
+  }
+}
+
 function normalizeUrl(text) {
   const v = String(text || '').trim();
   if (/^https?:\/\/\S+$/i.test(v)) return v;
@@ -1559,6 +1602,7 @@ let cropDrag = null;
 
 function renderModal() {
   const root = $('#modal-root');
+  revokePdfPreviewUrls();
   if (state.newFolder) { renderNewFolder(root); return; }
   if (state.quickAdd) { renderQuickAdd(root); return; }
   if (state.viewing) { renderViewer(root); return; }
@@ -1728,6 +1772,7 @@ function renderViewer(root) {
   const domain = item.url ? getDomain(item.url) : null;
   const tags = Array.isArray(item.tags) ? item.tags : [];
   const overlayKind = isMobile() ? 'bottom-sheet' : 'center';
+  const hasPdfPreview = isPdfFileLike(item);
 
   root.innerHTML = `
     <div class="overlay ${overlayKind}" data-close-overlay>
@@ -1763,6 +1808,16 @@ function renderViewer(root) {
             </div>
           ` : ''}
 
+          ${item.fileStorageId && hasPdfPreview ? `
+            <div class="pdf-preview" data-pdf-preview-id="${esc(item.id)}">
+              <div class="pdf-preview-head">
+                <span>${icon('file-text', 14)}<strong>Preview do PDF</strong></span>
+                <small class="pdf-preview-status">Carregando...</small>
+              </div>
+              <iframe title="Preview do PDF" loading="lazy"></iframe>
+            </div>
+          ` : ''}
+
           ${item.imageData ? `<img class="view-image" data-action="open-lightbox" data-src="${esc(item.imageData)}" src="${esc(item.imageData)}" alt="${esc(item.title || 'Imagem salva')}">` : ''}
 
           ${item.content
@@ -1788,6 +1843,7 @@ function renderViewer(root) {
       </div>
     </div>
   `;
+  hydratePdfPreviews(root);
 }
 
 function renderNewFolder(root) {
