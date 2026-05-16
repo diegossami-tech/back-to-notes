@@ -1882,9 +1882,16 @@ function renderViewer(root) {
                   <small>${esc([item.fileType || 'arquivo', formatBytes(item.fileSize)].filter(Boolean).join(' · '))}</small>
                 </span>
               </div>
-              <button class="view-file-download" data-action="download-file" data-id="${esc(item.id)}">
-                ${icon('download', 15)}<span>Baixar</span>
-              </button>
+              <div class="view-file-actions">
+                ${hasPdfPreview ? `
+                  <button class="view-file-open" data-action="open-pdf-reader" data-id="${esc(item.id)}">
+                    ${icon('external', 15)}<span>Tela cheia</span>
+                  </button>
+                ` : ''}
+                <button class="view-file-download" data-action="download-file" data-id="${esc(item.id)}">
+                  ${icon('download', 15)}<span>Baixar</span>
+                </button>
+              </div>
             </div>
           ` : ''}
 

@@ -1099,6 +1099,21 @@ body.ext-dragging .ext-drop-overlay { display: flex; }
   display: flex; align-items: center; gap: 10px;
   min-width: 0;
 }
+.view-file-actions {
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
+}
+.view-file-open {
+  min-height: 42px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  border-radius: var(--r-sm);
+  padding: 0 14px;
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--cream);
+  font-size: 13px;
+  font-weight: 700;
+}
 .pdf-preview {
   border: 1px solid var(--rule);
   border-radius: var(--r-sm);
@@ -1226,6 +1241,8 @@ body.ext-dragging .ext-drop-overlay { display: flex; }
   .file-upload-btn,
   .file-remove-btn { flex: 1 1 140px; }
   .view-file { align-items: stretch; flex-direction: column; }
+  .view-file-actions { width: 100%; }
+  .view-file-open { flex: 1; }
   .view-file-download { width: 100%; }
   .overlay.bottom-sheet .panel.modal-pdf {
     width: 100%;
