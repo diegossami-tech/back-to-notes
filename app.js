@@ -884,8 +884,24 @@ function syncTitle() {
 
 function readableSyncError(err) {
   const message = String(err?.message || err || '');
+  const code = String(err?.error_code || err?.code || '');
   if (/failed to fetch|networkerror|load failed/i.test(message)) {
     return 'Nao consegui conectar ao Supabase. Confira se o Project URL esta correto em supabase-config.js.';
+  }
+  if (/weak_password/i.test(code) || /password.*at least 6 characters/i.test(message)) {
+    return 'A senha precisa ter pelo menos 6 caracteres.';
+  }
+  if (/email.*invalid|invalid.*email/i.test(`${code} ${message}`)) {
+    return 'Digite um e-mail valido para criar a conta.';
+  }
+  if (/user_already_exists|already registered|already exists/i.test(`${code} ${message}`)) {
+    return 'Este e-mail ja tem uma conta. Use Entrar.';
+  }
+  if (/signup.*disabled|signups not allowed/i.test(`${code} ${message}`)) {
+    return 'A criacao de contas esta desativada no Supabase.';
+  }
+  if (/rate limit|too many/i.test(message)) {
+    return 'Muitas tentativas em pouco tempo. Aguarde um pouco e tente novamente.';
   }
   return message || 'Erro de sincronizacao';
 }
@@ -2738,6 +2754,7 @@ function renderSyncPanel() {
                 <h2>Entre ou crie uma conta</h2>
                 <p>Sincronize suas notas, links, prints e arquivos entre o computador e o celular.</p>
               </div>
+              ${syncState.lastError ? `<p class="sync-error">${esc(syncState.lastError)}</p>` : ''}
               <button class="sync-google-btn" data-action="sync-google" type="button">
                 <span class="sync-google-mark">G</span>
                 <span>Continuar com o Google</span>
