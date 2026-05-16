@@ -2893,11 +2893,9 @@ document.addEventListener('click', (e) => {
   // Overlay click (outside panel) — close
   const overlay = e.target.closest('[data-close-overlay]');
   if (overlay && !e.target.closest('[data-stop-prop]')) {
-    if (state.editing) closeEditor();
+    if (state.editing || state.quickAdd || state.newFolder) return;
     if (state.viewing) closeViewer();
-    if (state.quickAdd) closeQuickAdd();
-    if (state.newFolder) closeNewFolder();
-    if (state.showSearch) closeSearch();
+    else if (state.showSearch) closeSearch();
     return;
   }
 
