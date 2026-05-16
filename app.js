@@ -2519,8 +2519,8 @@ function renderModal() {
           </div>
 
           <div>
-            <label class="field-label">${d.type === 'note' ? 'Conteúdo' : 'Anotações'}</label>
-            ${d.type === 'note' ? renderTextStyleToolbar(d.textStyle) : ''}
+            <label class="field-label" data-content-label>${d.type === 'note' ? 'Conteúdo' : 'Anotações'}</label>
+            <div style="${d.type === 'note' ? '' : 'display:none'}">${renderTextStyleToolbar(d.textStyle)}</div>
             <textarea class="textarea ${d.type === 'note' ? `note-textarea ${textStyleClass(editorTextStyle)}` : ''}" id="f-content" rows="${d.type === 'note' ? 8 : 4}" placeholder="${d.type === 'note' ? 'Escreva aqui...' : 'O que achou? Por que salvou?'}">${esc(d.content)}</textarea>
             <p class="field-hint">Tambem da para colar uma imagem aqui para salvar texto e preview no mesmo item.</p>
           </div>
@@ -3636,13 +3636,58 @@ function syncDraftFromDom() {
   modalDraft.url = $('#f-url')?.value ?? modalDraft.url;
   modalDraft.content = $('#f-content')?.value ?? modalDraft.content;
 }
+
+function setEditorTypeUI(type) {
+  $('#url-field')?.style && ($('#url-field').style.display = ((type === 'link' || type === 'post' || type === 'file') ? '' : 'none'));
+  $('#image-upload-field')?.style && ($('#image-upload-field').style.display = (type === 'image' ? '' : 'none'));
+  $('#file-upload-field')?.style && ($('#file-upload-field').style.display = (type === 'file' ? '' : 'none'));
+  const urlLabel = document.querySelector('#url-field .field-label');
+  if (urlLabel) urlLabel.textContent = type === 'file' ? 'Caminho ou link' : 'Link';
+  const urlInput = $('#f-url');
+  if (urlInput) urlInput.placeholder = type === 'file' ? 'Ex: ~/Documentos/arquivo.pdf' : 'https://...';
+  const contentLabel = document.querySelector('[data-content-label]');
+  if (contentLabel) contentLabel.textContent = type === 'note' ? 'Conteúdo' : 'Anotações';
+  const textarea = $('#f-content');
+  if (textarea) {
+    const style = normalizeTextStyle(modalDraft?.textStyle);
+    textarea.rows = type === 'note' ? 8 : 4;
+    textarea.placeholder = type === 'note' ? 'Escreva aqui...' : 'O que achou? Por que salvou?';
+    textarea.className = `textarea ${type === 'note' ? `note-textarea ${textStyleClass(style)}` : ''}`;
+  }
+  const toolbar = $('#text-style-toolbar');
+  if (toolbar) toolbar.style.display = type === 'note' ? '' : 'none';
+  $$('#type-row [data-type]').forEach(btn => btn.classList.toggle('active', btn.dataset.type === type));
+}
+
 function changeDraftField(key, value) {
   if (!modalDraft) return;
   syncDraftFromDom();
   modalDraft[key] = value;
   state.editing = { ...modalDraft, isNew: !modalDraft.id };
+  if (key === 'collection') {
+    $$('#coll-row [data-coll]').forEach(btn => {
+      const active = btn.dataset.coll === value;
+      btn.classList.toggle('active', active);
+      if (active) {
+        const col = state.collections.find(c => c.id === value);
+        if (col?.color) {
+          btn.style.background = col.color;
+          btn.style.borderColor = col.color;
+        }
+      } else {
+        btn.style.background = '';
+        btn.style.borderColor = '';
+      }
+    });
+    return;
+  }
+  if (key === 'type') {
+    setEditorTypeUI(value);
+    return;
+  }
   renderModal();
 }
+
 function changeDraftTextStyle(key, value) {
   if (!modalDraft) return;
   syncDraftFromDom();
@@ -3650,7 +3695,14 @@ function changeDraftTextStyle(key, value) {
   style[key] = value;
   modalDraft.textStyle = isDefaultTextStyle(style) ? null : style;
   state.editing = { ...modalDraft, isNew: !modalDraft.id };
-  renderModal();
+  const normalized = normalizeTextStyle(modalDraft.textStyle);
+  $(`[data-text-style="${key}"][data-value="${value}"]`)?.focus();
+  $$(`[data-text-style="${key}"]`).forEach(btn => btn.classList.toggle('active', btn.dataset.value === value));
+  const textarea = $('#f-content');
+  if (textarea) {
+    textarea.className = `textarea note-textarea ${textStyleClass(normalized)}`;
+    textarea.focus();
+  }
 }
 
 function toggleDraftBullets() {
@@ -3664,8 +3716,11 @@ function toggleDraftBullets() {
     return shouldRemove ? line.replace(/^(\s*)[-*]\s+/, '$1') : line.replace(/^(\s*)/, '$1- ');
   }).join('\n');
   state.editing = { ...modalDraft, isNew: !modalDraft.id };
-  renderModal();
-  setTimeout(() => $('#f-content')?.focus(), 30);
+  const textarea = $('#f-content');
+  if (textarea) {
+    textarea.value = modalDraft.content;
+    textarea.focus();
+  }
 }
 
 function handleSave() {
