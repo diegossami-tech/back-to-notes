@@ -891,7 +891,7 @@ function moveItemToCollection(itemId, collectionId, opts = {}) {
     showToast(`Movido para ${toCol.name}`, 2200, () => {
       // undo
       state.items = state.items.map(i =>
-        i.id === itemId ? { ...i, collection: fromCol?.id || 'links' } : i
+        i.id === itemId ? { ...i, collection: fromCol?.id } : i
       );
       persist(); renderApp();
     });
@@ -975,14 +975,14 @@ function deleteCollection(id) {
   if (!col || col.system) return;
   confirmDialog({
     title: `Apagar “${col.name}”?`,
-    message: 'A pasta será removida. Os itens dentro voltam para Links.',
+    message: 'A pasta sera removida. Os itens dentro ficam sem pasta e continuam em Tudo.',
     confirmText: 'Deletar pasta',
     cancelText: 'Cancelar',
     danger: true,
   }).then((ok) => {
     if (!ok) return;
     state.collections = state.collections.filter(c => c.id !== id);
-    state.items = state.items.map(i => i.collection === id ? { ...i, collection: 'links' } : i);
+    state.items = state.items.map(i => i.collection === id ? { ...i, collection: undefined } : i);
     if (state.activeCol === id) state.activeCol = 'all';
     persist();
     renderApp();
@@ -1007,8 +1007,16 @@ function cycleSortMode() {
   renderApp();
 }
 
+function userCollections() {
+  return state.collections.filter(c => !c.system);
+}
+
+function activeUserCollectionId() {
+  return userCollections().some(c => c.id === state.activeCol) ? state.activeCol : undefined;
+}
+
 function openEditor(item) {
-  state.editing = item || { isNew: true, collection: state.activeCol !== 'all' ? state.activeCol : undefined };
+  state.editing = item || { isNew: true, collection: activeUserCollectionId() };
   state.viewing = null;
   state.quickAdd = null;
   renderModal();
@@ -1026,7 +1034,7 @@ function openQuickAdd(draft) {
   state.quickAdd = {
     ...draft,
     title: draft.title || '',
-    collection: draft.collection || (state.activeCol !== 'all' ? state.activeCol : 'links'),
+    collection: draft.collection || activeUserCollectionId(),
   };
   state.editing = null;
   state.viewing = null;
@@ -1135,6 +1143,18 @@ function pastePreviewText(text) {
   return value.length > 700 ? value.slice(0, 700).trimEnd() + '...' : value;
 }
 
+function renderFolderPicker(selectedId, attrName) {
+  const folders = userCollections();
+  if (!folders.length) {
+    return `<p class="folder-picker-empty">Sem pastas criadas ainda. Salve sem pasta ou crie uma pelo sidebar.</p>`;
+  }
+  return folders.map(c => `
+    <button class="chip chip-coll ${selectedId === c.id ? 'active' : ''}" ${attrName}="${esc(c.id)}" style="${selectedId === c.id ? `background:${c.color};border-color:${c.color}` : ''}">
+      ${esc(c.name)}
+    </button>
+  `).join('');
+}
+
 // ============ EXPORT / IMPORT ============
 function exportLibrary() {
   const data = { items: state.items, collections: state.collections, exportedAt: new Date().toISOString(), version: 1 };
@@ -1198,7 +1218,7 @@ async function handleEditorImageUpload(file) {
       imageData,
       originalImageData: imageData,
       cropRect: null,
-      collection: modalDraft.collection || (state.activeCol !== 'all' ? state.activeCol : 'prints'),
+      collection: modalDraft.collection || activeUserCollectionId(),
     };
     if (!modalDraft.tags?.length) modalDraft.tags = ['print'];
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
@@ -1222,7 +1242,7 @@ async function attachImageToEditingItem(file, sourceLabel = 'Imagem colada') {
       imageData,
       originalImageData: imageData,
       cropRect: null,
-      collection: modalDraft.collection || (state.activeCol !== 'all' ? state.activeCol : 'prints'),
+      collection: modalDraft.collection || activeUserCollectionId(),
     };
     if (!modalDraft.tags?.length) modalDraft.tags = ['print'];
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
@@ -1252,7 +1272,7 @@ async function handleEditorFileUpload(file) {
       fileType: stored.type,
       fileSize: stored.size,
       url: modalDraft.url || '',
-      collection: modalDraft.collection || (state.activeCol !== 'all' ? state.activeCol : 'links'),
+      collection: modalDraft.collection || activeUserCollectionId(),
     };
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
     renderModal();
@@ -1766,7 +1786,7 @@ function renderModal() {
     fileName: it.fileName || '',
     fileType: it.fileType || '',
     fileSize: it.fileSize || 0,
-    collection: it.collection || (isNew ? 'links' : state.collections[0].id),
+    collection: it.collection || (isNew ? activeUserCollectionId() : ''),
     tags: Array.isArray(it.tags) ? [...it.tags] : [],
   };
 
@@ -1850,13 +1870,9 @@ function renderModal() {
           </div>
 
           <div>
-            <label class="field-label">Coleção</label>
+            <label class="field-label">Pasta</label>
             <div class="coll-row" id="coll-row">
-              ${state.collections.map(c => `
-                <button class="chip chip-coll ${d.collection === c.id ? 'active' : ''}" data-coll="${esc(c.id)}" style="${d.collection === c.id ? `background:${c.color};border-color:${c.color}` : ''}">
-                  ${esc(c.name)}
-                </button>
-              `).join('')}
+              ${renderFolderPicker(d.collection, 'data-coll')}
             </div>
           </div>
 
@@ -2098,13 +2114,9 @@ function renderQuickAdd(root) {
           </div>
 
           <div>
-            <label class="field-label">Coleção</label>
+            <label class="field-label">Pasta</label>
             <div class="coll-row" id="quick-coll-row">
-              ${state.collections.map(c => `
-                <button class="chip chip-coll ${d.collection === c.id ? 'active' : ''}" data-quick-coll="${esc(c.id)}" style="${d.collection === c.id ? `background:${c.color};border-color:${c.color}` : ''}">
-                  ${esc(c.name)}
-                </button>
-              `).join('')}
+              ${renderFolderPicker(d.collection, 'data-quick-coll')}
             </div>
           </div>
 
@@ -2554,7 +2566,7 @@ window.addEventListener('drop', async (e) => {
       openQuickAdd({
         type: 'image', title: file.name.replace(/\.[^.]+$/, ''), content: '', url: '',
         imageData, originalImageData: imageData, cropRect: null,
-        collection: state.activeCol !== 'all' ? state.activeCol : 'prints',
+        collection: activeUserCollectionId(),
         tags: ['print'], previewLabel: 'Imagem solta',
       });
       return;
@@ -2564,7 +2576,7 @@ window.addEventListener('drop', async (e) => {
       openQuickAdd({
         type: 'file', title: file.name.replace(/\.[^.]+$/, ''), content: '', url: '',
         fileStorageId: stored.id, fileName: stored.name, fileType: stored.type, fileSize: stored.size,
-        collection: state.activeCol !== 'all' ? state.activeCol : 'links',
+        collection: activeUserCollectionId(),
         tags: [], previewLabel: 'Arquivo solto',
       });
     } catch (err) {
@@ -2584,13 +2596,13 @@ window.addEventListener('drop', async (e) => {
       content: '', url,
       thumbUrl: meta?.thumb || null,
       author: meta?.author || null,
-      collection: state.activeCol !== 'all' ? state.activeCol : 'links',
+      collection: activeUserCollectionId(),
       tags: [], previewLabel: 'Link solto',
     });
   } else {
     openQuickAdd({
       type: 'note', title: '', content: uri, url: '',
-      collection: state.activeCol !== 'all' ? state.activeCol : 'escritos',
+      collection: activeUserCollectionId(),
       tags: [], previewLabel: 'Texto solto',
     });
   }
@@ -2744,7 +2756,7 @@ async function draftFromClipboardData(clipboardData) {
       return {
         type: 'image', title: '', content: text || '', url: '',
         imageData, originalImageData: imageData, cropRect: null,
-        collection: state.activeCol !== 'all' ? state.activeCol : 'prints',
+        collection: activeUserCollectionId(),
         tags: ['print'], previewLabel: text ? 'Texto e imagem colados' : 'Imagem colada',
       };
     }
@@ -2759,13 +2771,13 @@ async function draftFromClipboardData(clipboardData) {
       content: '', url,
       thumbUrl: meta?.thumb || null,
       author: meta?.author || null,
-      collection: state.activeCol !== 'all' ? state.activeCol : 'links',
+      collection: activeUserCollectionId(),
       tags: [], previewLabel: 'Link colado',
     };
   }
   return {
     type: 'note', title: '', content: text, url: '',
-    collection: state.activeCol !== 'all' ? state.activeCol : 'escritos',
+    collection: activeUserCollectionId(),
     tags: [], previewLabel: 'Texto colado',
   };
 }

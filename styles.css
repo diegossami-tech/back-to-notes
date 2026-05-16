@@ -963,6 +963,14 @@ body.ext-dragging .ext-drop-overlay { display: flex; }
   font-size: 12px;
   line-height: 1.35;
 }
+.folder-picker-empty {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.35;
+}
 .chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 8px 12px;
