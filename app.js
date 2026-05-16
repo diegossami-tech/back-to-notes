@@ -921,10 +921,28 @@ function toggleItemSelection(id) {
   const item = state.items.find(i => i.id === id && !i.deletedAt);
   if (!item) return;
   const set = selectedItemSet();
-  if (set.has(id)) set.delete(id);
-  else set.add(id);
+  const selected = !set.has(id);
+  if (selected) set.add(id);
+  else set.delete(id);
   state.selectedIds = [...set];
-  renderApp();
+  updateSelectionDom(id, selected);
+}
+
+function updateSelectionDom(id, selected) {
+  const card = document.querySelector(`[data-card-id="${id}"]`);
+  if (card) {
+    card.classList.toggle('selected', selected);
+    const mark = card.querySelector('.card-select-mark');
+    if (mark) {
+      mark.innerHTML = icon(selected ? 'check-circle' : 'circle', 18);
+      mark.setAttribute('aria-label', selected ? 'Desmarcar card' : 'Selecionar card');
+    }
+  }
+  const count = state.selectedIds?.length || 0;
+  const total = document.querySelector('.bulk-status strong');
+  const label = document.querySelector('.bulk-status span');
+  if (total) total.textContent = count;
+  if (label) label.textContent = count === 1 ? 'card selecionado' : 'cards selecionados';
 }
 
 function moveSelectedItemsToCollection(collectionId) {
