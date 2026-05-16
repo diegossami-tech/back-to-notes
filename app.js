@@ -1625,7 +1625,7 @@ function renderModal() {
                 </label>
                 ${d.fileStorageId ? `<button class="file-remove-btn" data-action="clear-editor-file" type="button">${icon('x', 14)}<span>Remover</span></button>` : ''}
               </div>
-              <p class="file-upload-hint">Salvo neste navegador. Arquivos muito grandes podem ocupar bastante espaco no celular.</p>
+              <p class="file-upload-hint">PDF, Word, planilhas, ZIP e outros arquivos. Salvo neste navegador; arquivos muito grandes podem ocupar bastante espaco no celular.</p>
               ${d.fileStorageId ? `
                 <div class="stored-file">
                   <span class="stored-file-icon">${icon('folder', 18)}</span>

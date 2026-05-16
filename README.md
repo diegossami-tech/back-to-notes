@@ -15,7 +15,7 @@ App estático em HTML, CSS e JavaScript puro para organizar links, notas, posts 
 - **Drag-and-drop** entre coleções (HTML5 nativo no desktop, long-press no celular)
 - **Quick-add por clipboard** — cole link / texto / imagem em qualquer lugar
 - **Drop externo** — arraste URLs ou arquivos do desktop direto pra dentro
-- **Upload de fotos e arquivos** — escolha imagens, PDFs, documentos e outros arquivos do celular ou computador pelo editor
+- **Upload de fotos e arquivos** — escolha imagens, PDFs, Word (`.doc/.docx`), planilhas, ZIPs e outros arquivos do celular ou computador pelo editor
 - **Previews ricos** para YouTube, Vimeo, Twitch, Spotify, Instagram, TikTok, X — com thumb real quando o provedor permite
 - **Busca global** com `⌘K` / `Ctrl+K`
 - **Filtro por tag + sort** (recentes / mais antigos / alfa)
