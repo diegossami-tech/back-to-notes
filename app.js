@@ -1815,6 +1815,8 @@ function renderAll() {
 let draggingItemId = null;
 let currentDropTarget = null;
 let longPress = null;       // { card, itemId, startX, startY, timer, active }
+let stickyMobileDrag = null; // { card, itemId } after long-press selection
+let suppressNextDragClick = false;
 let ghostEl = null;
 let lastGhostXY = null;
 const LONG_PRESS_MS = 380;
@@ -1828,6 +1830,38 @@ function setDropTarget(el) {
 }
 function clearDropTarget() { setDropTarget(null); }
 function setDraggingMode(active) { document.body.classList.toggle('dragging-item', active); }
+
+function releasePointerCaptureSafe(card, pointerId) {
+  if (!card || pointerId == null) return;
+  try {
+    if (card.hasPointerCapture?.(pointerId)) card.releasePointerCapture(pointerId);
+  } catch {}
+}
+
+function clearMobileDragSelection() {
+  stickyMobileDrag?.card?.classList.remove('dragging', 'long-press-arming');
+  stickyMobileDrag = null;
+  suppressNextDragClick = false;
+  draggingItemId = null;
+  endDragGhost();
+  clearDropTarget();
+  setDraggingMode(false);
+}
+
+function keepMobileDragSelection(card, itemId) {
+  stickyMobileDrag = { card, itemId };
+  draggingItemId = itemId;
+  card.classList.add('dragging');
+  setDraggingMode(true);
+  showToast('Toque em uma colecao para mover', 1600);
+}
+
+function completeMobileDrop(colId) {
+  if (!stickyMobileDrag) return;
+  const { itemId } = stickyMobileDrag;
+  clearMobileDragSelection();
+  if (colId && colId !== 'all') moveItemToCollection(itemId, colId);
+}
 
 function startDragGhost(card, x, y) {
   ghostEl = $('#drag-ghost');
@@ -1998,9 +2032,12 @@ document.addEventListener('pointerdown', (e) => {
   const card = e.target.closest('.card');
   if (!card) return;
 
+  if (stickyMobileDrag) clearMobileDragSelection();
+  try { card.setPointerCapture?.(e.pointerId); } catch {}
   longPress = {
     card, itemId: card.dataset.cardId,
     startX: e.clientX, startY: e.clientY,
+    pointerId: e.pointerId,
     active: false,
     timer: setTimeout(() => {
       if (!longPress) return;
@@ -2023,6 +2060,7 @@ document.addEventListener('pointermove', (e) => {
   if (!longPress.active) {
     if (Math.abs(dx) + Math.abs(dy) > LONG_PRESS_TOLERANCE) {
       clearTimeout(longPress.timer);
+      releasePointerCaptureSafe(longPress.card, longPress.pointerId);
       longPress = null;
     }
     return;
@@ -2039,29 +2077,46 @@ document.addEventListener('pointerup', (e) => {
   const wasActive = longPress.active;
   const itemId = longPress.itemId;
   const card = longPress.card;
+  const pointerId = longPress.pointerId;
   longPress = null;
+  releasePointerCaptureSafe(card, pointerId);
   card.classList.remove('long-press-arming');
   if (!wasActive) return; // it was just a tap — let click handle it
 
-  card.classList.remove('dragging');
   endDragGhost();
   const target = findDropCollectionAt(e.clientX, e.clientY);
   const colId = target?.dataset.dropCol;
   clearDropTarget();
-  setDraggingMode(false);
-  draggingItemId = null;
-  if (colId && colId !== 'all') moveItemToCollection(itemId, colId);
+  if (colId && colId !== 'all') {
+    card.classList.remove('dragging');
+    setDraggingMode(false);
+    draggingItemId = null;
+    moveItemToCollection(itemId, colId);
+    return;
+  }
+  suppressNextDragClick = true;
+  keepMobileDragSelection(card, itemId);
 });
 
 document.addEventListener('pointercancel', () => {
   if (!longPress) return;
   clearTimeout(longPress.timer);
-  longPress.card?.classList.remove('long-press-arming', 'dragging');
+  const { active, card, itemId, pointerId } = longPress;
+  longPress = null;
+  releasePointerCaptureSafe(card, pointerId);
+  card?.classList.remove('long-press-arming');
+  if (active) {
+    endDragGhost();
+    clearDropTarget();
+    suppressNextDragClick = false;
+    keepMobileDragSelection(card, itemId);
+    return;
+  }
+  card?.classList.remove('dragging');
   endDragGhost();
   clearDropTarget();
   setDraggingMode(false);
   draggingItemId = null;
-  longPress = null;
 });
 
 // === External drops (from desktop / other browsers) ===
@@ -2345,6 +2400,20 @@ function handleSave() {
 
 // ============ CLICKS ============
 document.addEventListener('click', (e) => {
+  if (stickyMobileDrag) {
+    e.preventDefault();
+    e.stopPropagation();
+    const target = e.target.closest('[data-drop-col]');
+    const colId = target?.dataset.dropCol;
+    if (suppressNextDragClick) {
+      suppressNextDragClick = false;
+      if (!colId || colId === 'all') return;
+    }
+    if (colId && colId !== 'all') completeMobileDrop(colId);
+    else clearMobileDragSelection();
+    return;
+  }
+
   if (e.target.closest('[data-stop]')) return;
 
   // Modal-internal interactions
