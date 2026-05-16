@@ -1640,6 +1640,7 @@ function renderCard(item, idx) {
   const tags = item.tags || [];
   const hasPdfPreview = item.fileStorageId && isPdfFileLike(item);
   const variant = item.imageData ? 'image' : hasPdfPreview ? 'pdf' : isHeroVideo ? 'video' : item.type;
+  const isCenteredTextPreview = item.previewStyle === 'centered-text' && item.type === 'note' && !!item.content;
   const dateLabel = formatDate(item.updatedAt || item.createdAt);
   const heroInfo = providerKey ? brandInfo(providerMeta) : null;
 
@@ -1650,6 +1651,7 @@ function renderCard(item, idx) {
     </div>
   `;
   const titleHtml = `<h3 class="card-title">${item.title ? esc(item.title) : '<em style="opacity:0.5">Sem título</em>'}</h3>`;
+  const contentHtml = item.content ? `<p class="card-content ${isCenteredTextPreview ? 'centered-preview' : ''}">${esc(item.content)}</p>` : '';
   const tagsHtml = tags.slice(0, 3).map(t => `<span class="tag">${esc(t)}</span>`).join('') +
     (tags.length > 3 ? `<span class="tag-more">+${tags.length - 3}</span>` : '');
   const fileHtml = item.fileStorageId && !hasPdfPreview ? `
@@ -1679,7 +1681,7 @@ function renderCard(item, idx) {
         <img class="card-image" src="${esc(item.imageData)}" alt="" draggable="false">
         <div class="card-body">
           ${head}${titleHtml}
-          ${item.content ? `<p class="card-content">${esc(item.content)}</p>` : ''}
+          ${contentHtml}
           ${foot}
         </div>
       </article>
@@ -1706,7 +1708,7 @@ function renderCard(item, idx) {
               <small>${esc(formatBytes(item.fileSize) || 'PDF')}</small>
             </span>
           </div>
-          ${item.content ? `<p class="card-content">${esc(item.content)}</p>` : ''}
+          ${contentHtml}
           ${foot}
         </div>
       </article>
@@ -1735,7 +1737,7 @@ function renderCard(item, idx) {
         </span>
         <div class="card-body">
           ${head}${titleHtml}
-          ${item.content ? `<p class="card-content">${esc(item.content)}</p>` : ''}
+          ${contentHtml}
           ${foot}
         </div>
       </article>
@@ -1744,11 +1746,11 @@ function renderCard(item, idx) {
 
   // Default (note/link/post/file): inline content + optional link preview
   return `
-    <article class="card variant-${item.type}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="true" style="animation-delay:${Math.min(idx * 25, 200)}ms">
+    <article class="card variant-${item.type} ${isCenteredTextPreview ? 'variant-centered-text' : ''}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="true" style="animation-delay:${Math.min(idx * 25, 200)}ms">
       ${head}
       ${titleHtml}
       ${fileHtml}
-      ${item.content ? `<p class="card-content">${esc(item.content)}</p>` : ''}
+      ${contentHtml}
       ${domain && !item.imageData ? renderLinkPreview(item.url, '', item.thumbUrl) : ''}
       ${foot}
     </article>
@@ -1787,6 +1789,7 @@ function renderModal() {
     fileType: it.fileType || '',
     fileSize: it.fileSize || 0,
     collection: it.collection || (isNew ? activeUserCollectionId() : ''),
+    previewStyle: it.previewStyle || '',
     tags: Array.isArray(it.tags) ? [...it.tags] : [],
   };
 
@@ -2778,7 +2781,7 @@ async function draftFromClipboardData(clipboardData) {
   return {
     type: 'note', title: '', content: text, url: '',
     collection: activeUserCollectionId(),
-    tags: [], previewLabel: 'Texto colado',
+    tags: [], previewLabel: 'Texto colado', previewStyle: 'centered-text',
   };
 }
 

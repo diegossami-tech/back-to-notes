@@ -436,6 +436,24 @@ body.dragging-item .folder-empty { opacity: 0.7; }
   font-size: 13px;
   -webkit-line-clamp: 3;
 }
+.card.variant-centered-text {
+  min-height: 188px;
+}
+.card-content.centered-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 86px;
+  margin: auto 0 14px;
+  text-align: center;
+  text-wrap: pretty;
+  word-break: normal;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: initial;
+  overflow: visible;
+}
 
 .card-image {
   width: 100%;
