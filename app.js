@@ -168,6 +168,13 @@ function isPdfFileLike(file) {
   return type === 'application/pdf' || name.endsWith('.pdf');
 }
 
+function isImageFileLike(file) {
+  if (!file) return false;
+  const type = String(file.fileType || file.type || '').toLowerCase();
+  const name = String(file.fileName || file.name || '').toLowerCase();
+  return type.startsWith('image/') || /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)$/i.test(name);
+}
+
 function isWordFileLike(file) {
   if (!file) return false;
   const type = String(file.fileType || file.type || '').toLowerCase();
@@ -1413,7 +1420,7 @@ function importLibrary() {
 }
 
 async function handleEditorImageUpload(file) {
-  if (!file || !file.type?.startsWith('image/')) {
+  if (!file || !isImageFileLike(file)) {
     showToast('Escolha uma imagem valida');
     return;
   }
@@ -1430,6 +1437,11 @@ async function handleEditorImageUpload(file) {
       imageData,
       originalImageData: imageData,
       cropRect: null,
+      fileStorageId: '',
+      fileName: '',
+      fileType: '',
+      fileSize: 0,
+      url: modalDraft.url || '',
       collection: modalDraft.collection || activeUserCollectionId(),
     };
     if (!modalDraft.tags?.length) modalDraft.tags = ['print'];
@@ -1443,7 +1455,7 @@ async function handleEditorImageUpload(file) {
 }
 
 async function attachImageToEditingItem(file, sourceLabel = 'Imagem colada') {
-  if (!file || !file.type?.startsWith('image/') || !modalDraft) return false;
+  if (!file || !isImageFileLike(file) || !modalDraft) return false;
   try {
     syncDraftFromDom();
     const raw = await fileToDataUrl(file);
@@ -1454,6 +1466,10 @@ async function attachImageToEditingItem(file, sourceLabel = 'Imagem colada') {
       imageData,
       originalImageData: imageData,
       cropRect: null,
+      fileStorageId: '',
+      fileName: '',
+      fileType: '',
+      fileSize: 0,
       collection: modalDraft.collection || activeUserCollectionId(),
     };
     if (!modalDraft.tags?.length) modalDraft.tags = ['print'];
@@ -1471,6 +1487,10 @@ async function attachImageToEditingItem(file, sourceLabel = 'Imagem colada') {
 async function handleEditorFileUpload(file) {
   if (!file) return;
   if (!modalDraft) return;
+  if (isImageFileLike(file)) {
+    await handleEditorImageUpload(file);
+    return;
+  }
   try {
     syncDraftFromDom();
     const stored = await putStoredFile(file);
@@ -1483,6 +1503,9 @@ async function handleEditorFileUpload(file) {
       fileName: stored.name,
       fileType: stored.type,
       fileSize: stored.size,
+      imageData: '',
+      originalImageData: '',
+      cropRect: null,
       url: modalDraft.url || '',
       collection: modalDraft.collection || activeUserCollectionId(),
     };
@@ -2832,7 +2855,7 @@ window.addEventListener('drop', async (e) => {
   // File first
   const file = dt.files?.[0];
   if (file) {
-    if (file.type.startsWith('image/')) {
+    if (isImageFileLike(file)) {
       const raw = await fileToDataUrl(file);
       const imageData = await compressImageDataUrl(raw);
       openQuickAdd({
