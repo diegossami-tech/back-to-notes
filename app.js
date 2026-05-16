@@ -1088,8 +1088,12 @@ function userCollections() {
   return state.collections.filter(c => !c.system);
 }
 
+function isUserCollectionId(id) {
+  return userCollections().some(c => c.id === id);
+}
+
 function activeUserCollectionId() {
-  return userCollections().some(c => c.id === state.activeCol) ? state.activeCol : undefined;
+  return isUserCollectionId(state.activeCol) ? state.activeCol : undefined;
 }
 
 function openEditor(item) {
@@ -1892,14 +1896,16 @@ function renderApp() {
 
       <!-- Mobile drop bar (visible while dragging on mobile) -->
       <div class="drop-bar" id="drop-bar">
-        <div class="drop-bar-label">Solte sobre uma <em>coleção</em></div>
+        <div class="drop-bar-label">Solte sobre uma <em>pasta</em></div>
         <div class="drop-bar-targets">
-          ${state.collections.map(col => `
-            <button class="drop-target-pill" data-drop-col="${esc(col.id)}">
-              <span class="icon" style="color:${col.color}">${icon(col.icon, 22)}</span>
-              <span class="name">${esc(col.name)}</span>
-            </button>
-          `).join('')}
+          ${userCols.length
+            ? userCols.map(col => `
+              <button class="drop-target-pill" data-drop-col="${esc(col.id)}">
+                <span class="icon" style="color:${col.color}">${icon(col.icon, 22)}</span>
+                <span class="name">${esc(col.name)}</span>
+              </button>
+            `).join('')
+            : '<span class="drop-bar-empty">Crie uma pasta para mover cards.</span>'}
         </div>
       </div>
 
@@ -2634,14 +2640,18 @@ function keepMobileDragSelection(card, itemId) {
   draggingItemId = itemId;
   card.classList.add('dragging');
   setDraggingMode(true);
-  showToast('Toque em uma colecao para mover', 1600);
+  showToast('Toque em uma pasta para mover', 1600);
 }
 
 function completeMobileDrop(colId) {
   if (!stickyMobileDrag) return;
+  if (!isUserCollectionId(colId)) {
+    clearMobileDragSelection();
+    return;
+  }
   const { itemId } = stickyMobileDrag;
   clearMobileDragSelection();
-  if (colId && colId !== 'all') moveItemToCollection(itemId, colId);
+  moveItemToCollection(itemId, colId);
 }
 
 function startDragGhost(card, x, y) {
@@ -2868,7 +2878,7 @@ document.addEventListener('pointerup', (e) => {
   const target = findDropCollectionAt(e.clientX, e.clientY);
   const colId = target?.dataset.dropCol;
   clearDropTarget();
-  if (colId && colId !== 'all') {
+  if (isUserCollectionId(colId)) {
     card.classList.remove('dragging');
     setDraggingMode(false);
     draggingItemId = null;
@@ -3218,9 +3228,9 @@ document.addEventListener('click', (e) => {
     const colId = target?.dataset.dropCol;
     if (suppressNextDragClick) {
       suppressNextDragClick = false;
-      if (!colId || colId === 'all') return;
+      if (!isUserCollectionId(colId)) return;
     }
-    if (colId && colId !== 'all') completeMobileDrop(colId);
+    if (isUserCollectionId(colId)) completeMobileDrop(colId);
     else clearMobileDragSelection();
     return;
   }

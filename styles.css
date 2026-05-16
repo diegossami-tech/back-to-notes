@@ -930,6 +930,13 @@ body.dragging-item .drop-bar {
   padding-bottom: 4px;
 }
 .drop-bar-targets::-webkit-scrollbar { display: none; }
+.drop-bar-empty {
+  width: 100%;
+  padding: 10px 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
 .drop-target-pill {
   flex-shrink: 0;
   min-width: 78px;
