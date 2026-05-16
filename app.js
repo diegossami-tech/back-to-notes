@@ -764,6 +764,7 @@ let state = {
 };
 
 let saveTimer;
+let saveErrorShown = false;
 let syncTimer;
 let suppressCloudPush = false;
 const syncState = {
@@ -778,18 +779,85 @@ const syncState = {
 
 function persist() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
+  saveTimer = setTimeout(async () => {
     try {
+      await externalizeImagesForStorage();
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        items: state.items,
+        items: persistableItems(),
         collections: state.collections,
       }));
+      saveErrorShown = false;
       scheduleCloudPush();
     } catch (e) {
       console.error('Save failed:', e);
-      showToast('Não foi possível salvar — armazenamento cheio?', 4000);
+      if (!saveErrorShown) {
+        saveErrorShown = true;
+        showToast('Não foi possível salvar. Libere espaço ou remova imagens grandes.', 5000);
+      }
     }
   }, 250);
+}
+
+function persistableItems(items = state.items) {
+  return items.map(item => {
+    if (!item?.imageData || !item.imageStorageId) return item;
+    const { imageData, originalImageData, cropRect, ...rest } = item;
+    return rest;
+  });
+}
+
+async function dataUrlToBlob(dataUrl) {
+  const res = await fetch(dataUrl);
+  return await res.blob();
+}
+
+async function putStoredDataUrl(dataUrl, name = 'imagem') {
+  const blob = await dataUrlToBlob(dataUrl);
+  const ext = blob.type?.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+  const filename = /\.[a-z0-9]+$/i.test(name) ? name : `${name}.${ext}`;
+  const file = new File([blob], filename, { type: blob.type || 'image/png' });
+  return await putStoredFile(file);
+}
+
+async function externalizeImagesForStorage() {
+  let changed = false;
+  for (const item of state.items) {
+    if (!item?.imageData || item.imageStorageId) continue;
+    const safeName = item.fileName || item.title || 'imagem';
+    const stored = await putStoredDataUrl(item.imageData, safeName);
+    item.imageStorageId = stored.id;
+    item.imageFileName = stored.name;
+    item.imageFileType = stored.type;
+    item.imageFileSize = stored.size;
+    changed = true;
+  }
+  return changed;
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function hydrateStoredImages() {
+  const missing = state.items.filter(item => item?.imageStorageId && !item.imageData);
+  if (!missing.length) return;
+  let changed = false;
+  for (const item of missing) {
+    try {
+      const stored = await getStoredFile(item.imageStorageId);
+      if (!stored?.blob) continue;
+      item.imageData = await blobToDataUrl(stored.blob);
+      changed = true;
+    } catch (err) {
+      console.warn('Image hydrate failed:', err);
+    }
+  }
+  if (changed) renderAll();
 }
 
 function load() {
@@ -846,7 +914,7 @@ function librarySnapshot() {
   return {
     version: 2,
     updatedAt: new Date().toISOString(),
-    items: state.items,
+    items: persistableItems(),
     collections: state.collections,
   };
 }
@@ -3864,6 +3932,8 @@ window.addEventListener('resize', () => {
 // ============ INIT ============
 load();
 renderAll();
+hydrateStoredImages();
+persist();
 initSync();
 // Backfill thumbs for existing items in the background.
 setTimeout(enrichLibrary, 800);
