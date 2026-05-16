@@ -1124,12 +1124,13 @@ let speedDial = {
   anchor: null,
   closeTimer: null,
   mode: 'hover',
+  collectionId: null,
 };
 
 const SPEED_DIAL_ACTIONS = [
-  { id: 'note', label: 'Nova nota', aria: 'Nova nota', icon: 'file-text' },
-  { id: 'file', label: 'Subir arquivo', aria: 'Subir arquivo', icon: 'paperclip' },
-  { id: 'link', label: 'Colar link', aria: 'Colar link da area de transferencia', icon: 'clipboard-paste' },
+  { id: 'note', label: 'Nota', aria: 'Nova nota', icon: 'file-text' },
+  { id: 'file', label: 'Arquivo/Imagem', aria: 'Subir arquivo ou imagem', icon: 'paperclip' },
+  { id: 'link', label: 'Link', aria: 'Colar link da area de transferencia', icon: 'clipboard-paste' },
 ];
 
 function isTouchLike() {
@@ -1195,7 +1196,7 @@ function openSpeedDial(anchor, mode = isTouchLike() ? 'tap' : 'hover') {
   cancelSpeedDialClose();
   if (speedDial.open && speedDial.anchor === anchor) return;
   closeSpeedDial({ immediate: true, restoreFocus: false });
-  speedDial = { ...speedDial, open: true, anchor, mode };
+  speedDial = { ...speedDial, open: true, anchor, mode, collectionId: activeUserCollectionId() };
   setSpeedDialExpanded(anchor, true);
   renderSpeedDial(anchor);
   setTimeout(() => {
@@ -1223,6 +1224,7 @@ function closeSpeedDial(opts = {}) {
   }
   speedDial.open = false;
   speedDial.anchor = null;
+  speedDial.collectionId = null;
 }
 
 function scheduleSpeedDialClose() {
@@ -1267,14 +1269,34 @@ document.addEventListener('pointerdown', (event) => {
   closeSpeedDial();
 }, true);
 
-async function addFilesFromPicker(files) {
+async function addFilesFromPicker(files, collectionId = activeUserCollectionId()) {
   const list = Array.from(files || []);
   if (!list.length) return;
   const now = Date.now();
   const created = [];
   for (const [index, file] of list.entries()) {
-    const stored = await putStoredFile(file);
     const title = (file.name || 'arquivo').replace(/\.[^.]+$/, '') || file.name || 'arquivo';
+    const timestamp = now + index;
+    if (file.type?.startsWith('image/')) {
+      const raw = await fileToDataUrl(file);
+      const imageData = await compressImageDataUrl(raw);
+      created.push({
+        type: 'image',
+        title,
+        content: `Tipo: ${file.type || 'imagem'}\nTamanho: ${formatBytes(file.size) || '0 B'}`,
+        url: '',
+        imageData,
+        originalImageData: imageData,
+        cropRect: null,
+        collection: collectionId,
+        tags: ['print'],
+        id: uid(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      continue;
+    }
+    const stored = await putStoredFile(file);
     created.push({
       type: 'file',
       title,
@@ -1284,26 +1306,26 @@ async function addFilesFromPicker(files) {
       fileName: stored.name,
       fileType: stored.type,
       fileSize: stored.size,
-      collection: activeUserCollectionId(),
+      collection: collectionId,
       tags: [],
       id: uid(),
-      createdAt: now + index,
-      updatedAt: now + index,
+      createdAt: timestamp,
+      updatedAt: timestamp,
     });
   }
   state.items = [...created.reverse(), ...state.items];
   persist();
   renderAll();
-  showToast(`${created.length} ${created.length === 1 ? 'arquivo adicionado' : 'arquivos adicionados'}`);
+  showToast(`${created.length} ${created.length === 1 ? 'item adicionado' : 'itens adicionados'}`);
 }
 
-function openFileSpeedPicker() {
+function openFileSpeedPicker(collectionId = activeUserCollectionId()) {
   const input = document.createElement('input');
   input.type = 'file';
   input.multiple = true;
   input.onchange = async () => {
     try {
-      await addFilesFromPicker(input.files);
+      await addFilesFromPicker(input.files, collectionId);
     } catch (err) {
       console.error(err);
       showToast('Nao foi possivel subir o arquivo');
@@ -1312,7 +1334,7 @@ function openFileSpeedPicker() {
   input.click();
 }
 
-async function openClipboardLinkEditor() {
+async function openClipboardLinkEditor(collectionId = activeUserCollectionId()) {
   let text = '';
   try {
     text = await navigator.clipboard?.readText?.() || '';
@@ -1320,22 +1342,23 @@ async function openClipboardLinkEditor() {
   const url = speedDialUrlFromText(text);
   if (url) {
     const domain = getDomain(url) || url;
-    openEditor({ isNew: true, type: 'link', title: domain, url, content: '', collection: activeUserCollectionId(), tags: [] });
+    openEditor({ isNew: true, type: 'link', title: domain, url, content: '', collection: collectionId, tags: [] });
     scheduleOEmbedFill(url);
     return;
   }
-  openEditor({ isNew: true, type: 'link', title: '', url: '', content: '', collection: activeUserCollectionId(), tags: [] });
+  openEditor({ isNew: true, type: 'link', title: '', url: '', content: '', collection: collectionId, tags: [] });
   setTimeout(() => $('#f-url')?.focus(), 80);
 }
 
 function runSpeedDialAction(actionId) {
+  const collectionId = speedDial.collectionId || activeUserCollectionId();
   closeSpeedDial({ immediate: true });
   if (actionId === 'note') {
-    openEditor({ isNew: true, type: 'note', title: '', content: '', url: '', collection: activeUserCollectionId(), tags: [] });
+    openEditor({ isNew: true, type: 'note', title: '', content: '', url: '', collection: collectionId, tags: [] });
   } else if (actionId === 'file') {
-    openFileSpeedPicker();
+    openFileSpeedPicker(collectionId);
   } else if (actionId === 'link') {
-    openClipboardLinkEditor();
+    openClipboardLinkEditor(collectionId);
   }
 }
 
