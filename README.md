@@ -1,4 +1,4 @@
-# Backtonotes
+# BackNotes
 
 App estático em HTML, CSS e JavaScript puro para organizar links, notas, posts salvos, prints e arquivos em coleções pessoais.
 
@@ -6,7 +6,7 @@ App estático em HTML, CSS e JavaScript puro para organizar links, notas, posts 
 
 - **Paleta Caderno** (padrão) — fundo creme + único acento vermelhão (`#dc4a2c`) inspirado no design "uma cor só" do Substack
 - **Sidebar como drawer** — sempre escondida, abre no botão do menu
-- **Topbar minimalista** — wordmark "backtonotes" + busca + adicionar
+- **Topbar minimalista** — wordmark "BackNotes" + busca + adicionar
 - 4 outras paletas no painel de Tweaks (Lousa, Bosque, Linho & Tinta, Cobalto)
 
 ## O que tem

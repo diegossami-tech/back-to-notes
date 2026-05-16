@@ -1707,7 +1707,7 @@ function renderApp() {
       <header class="topbar">
         <button class="topbar-menu" data-action="open-sidebar" aria-label="Abrir menu">${icon('menu', 20)}</button>
         <div class="topbar-brand" data-action="set-col" data-id="all" role="button" tabindex="0">
-          backtonotes
+          <span class="brand-word"><span>Back</span><span>Notes</span></span>
         </div>
         <button class="topbar-search-btn" data-action="open-search" aria-label="Buscar">${icon('search', 17)}</button>
         <button class="topbar-add-btn" data-action="new-item" aria-label="Adicionar item">${icon('plus', 18)}</button>
@@ -1719,8 +1719,7 @@ function renderApp() {
         <div class="sidebar-logo">
           <div class="sidebar-logo-box">${icon('library', 22)}</div>
           <div>
-            <div class="sidebar-logo-name">back<em>to</em>notes</div>
-            <div class="sidebar-logo-sub">de volta às notas</div>
+            <div class="sidebar-logo-name"><span class="brand-word"><span>Back</span><span>Notes</span></span></div>
           </div>
         </div>
 
