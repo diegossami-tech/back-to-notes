@@ -1550,9 +1550,9 @@ function renderColItem(col, active, count, options = {}) {
         <span>${esc(col.name)}</span>
       </span>
       <span class="col-item-right">
-        ${editable ? `<span class="col-action col-edit" data-action="edit-col" data-id="${esc(col.id)}" data-tip="${esc(editLabel)}" title="${esc(editLabel)}" aria-label="${esc(editLabel)}" draggable="false">${icon('pencil', 12)}<span class="col-action-label">${esc(editLabel)}</span></span>` : ''}
+        ${editable ? `<span class="col-action col-edit" data-action="edit-col" data-id="${esc(col.id)}" title="${esc(editLabel)}" aria-label="${esc(editLabel)}" draggable="false">${icon('pencil', 12)}</span>` : ''}
         ${deletable ? `
-          <span class="col-action col-delete" data-action="del-col" data-id="${esc(col.id)}" data-tip="Deletar pasta" title="Deletar pasta" aria-label="Deletar pasta" draggable="false">${icon('x', 12)}<span class="col-action-label">Deletar pasta</span></span>
+          <span class="col-action col-delete" data-action="del-col" data-id="${esc(col.id)}" title="Deletar pasta" aria-label="Deletar pasta" draggable="false">${icon('x', 12)}</span>
         ` : ''}
         <span>${count}</span>
       </span>
