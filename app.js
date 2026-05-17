@@ -1450,7 +1450,7 @@ function patchNewFolder(patch) {
   if (!state.newFolder) return;
   const nameInput = $('#nf-name');
   state.newFolder = { ...state.newFolder, name: nameInput ? nameInput.value : state.newFolder.name, ...patch };
-  renderModal();
+  refreshNewFolderUI();
 }
 
 function editCollection(id) {
@@ -1866,7 +1866,7 @@ async function handleEditorFileUpload(file) {
       collection: modalDraft.collection || activeUserCollectionId(),
     };
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
-    renderModal();
+    refreshEditorFileUI();
     showToast('Arquivo carregado');
   } catch (err) {
     console.error(err);
@@ -1885,7 +1885,7 @@ function clearEditorFile() {
     fileSize: 0,
   };
   state.editing = { ...modalDraft, isNew: !modalDraft.id };
-  renderModal();
+  refreshEditorFileUI();
 }
 
 function clearEditorImage() {
@@ -2743,6 +2743,59 @@ function renderNewFolder(root) {
   setTimeout(() => $('#nf-name')?.focus(), 60);
 }
 
+function refreshNewFolderUI() {
+  if (!state.newFolder) return;
+  const d = state.newFolder;
+  const previewIcon = document.querySelector('.nf-preview-row .col-item-left span:first-child');
+  if (previewIcon) {
+    previewIcon.style.color = d.color;
+    previewIcon.innerHTML = icon(d.icon, 16);
+  }
+  const previewName = document.querySelector('.nf-preview-row .col-item-left span:last-child');
+  if (previewName) previewName.textContent = d.name?.trim() || 'Sua pasta';
+  $$('[data-nf-icon]').forEach(btn => {
+    const active = btn.dataset.nfIcon === d.icon;
+    btn.classList.toggle('active', active);
+    btn.style.color = active ? d.color : '';
+  });
+  $$('[data-nf-color]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.nfColor === d.color);
+  });
+}
+
+function renderQuickAddPreviewContent(d) {
+  if (d.imageData) {
+    const isCropped = !!(d.originalImageData && d.imageData !== d.originalImageData);
+    return `
+      <div class="crop-tools ${isCropped ? 'is-cropped' : ''}">
+        <div class="crop-help">
+          ${isCropped
+            ? `<strong>Imagem recortada</strong><br><span>arraste novamente para refinar, ou volte ao original</span>`
+            : `<strong>Arraste sobre a imagem para recortar</strong><br><span>solte para aplicar - ou salve a imagem inteira</span>`}
+        </div>
+        ${isCropped
+          ? `<button class="crop-btn crop-btn-secondary" data-action="clear-crop">${icon('upload', 13)}<span>Imagem inteira</span></button>`
+          : ''}
+      </div>
+      <div class="crop-stage" data-crop-stage>
+        <img src="${esc(d.imageData)}" alt="">
+      </div>
+      <div class="crop-selection" data-crop-selection></div>
+      ${d.content ? `<p class="paste-preview-text with-image">${esc(pastePreviewText(d.content))}</p>` : ''}
+    `;
+  }
+  if (d.fileStorageId) return renderStoredFilePreview(d);
+  if (d.url) return renderLinkPreview(d.url, 'view-link-preview', d.thumbUrl);
+  return `<p class="paste-preview-text">${esc(pastePreviewText(d.content))}</p>`;
+}
+
+function refreshQuickAddPreviewUI() {
+  if (!state.quickAdd) return;
+  setQuickTitleFromDom();
+  const preview = document.querySelector('.paste-preview');
+  if (preview) preview.innerHTML = renderQuickAddPreviewContent(state.quickAdd);
+}
+
 function renderQuickAdd(root) {
   modalWasOpen = false;
   const d = state.quickAdd;
@@ -3435,10 +3488,45 @@ function renderEditorImagePreview(dataUrl, title = '') {
   ` : '';
 }
 
+function renderStoredFilePreview(d) {
+  return d?.fileStorageId ? `
+    <div class="stored-file">
+      <span class="stored-file-icon">${icon('folder', 18)}</span>
+      <span class="stored-file-main">
+        <strong>${esc(d.fileName || d.title || 'Arquivo')}</strong>
+        <small>${esc([d.fileType || 'arquivo', formatBytes(d.fileSize)].filter(Boolean).join(' - '))}</small>
+      </span>
+    </div>
+  ` : '';
+}
+
+function refreshEditorFileUI() {
+  const field = $('#file-upload-field');
+  if (!field || !modalDraft) return;
+  const hasFile = !!modalDraft.fileStorageId;
+  const titleInput = $('#f-title');
+  if (titleInput && !titleInput.value && modalDraft.title) titleInput.value = modalDraft.title;
+  const btnText = field.querySelector('.file-upload-btn span');
+  if (btnText) btnText.textContent = hasFile ? 'Trocar arquivo' : 'Escolher arquivo';
+  const actions = field.querySelector('.file-upload-actions');
+  const removeBtn = field.querySelector('.file-remove-btn');
+  if (hasFile && !removeBtn && actions) {
+    actions.insertAdjacentHTML('beforeend', `<button class="file-remove-btn" data-action="clear-editor-file" type="button">${icon('x', 14)}<span>Remover</span></button>`);
+  }
+  if (!hasFile && removeBtn) removeBtn.remove();
+  field.querySelector('.stored-file')?.remove();
+  if (hasFile) {
+    field.querySelector('.file-upload-box')?.insertAdjacentHTML('beforeend', renderStoredFilePreview(modalDraft));
+  }
+  setEditorTypeUI(modalDraft.type || 'file');
+}
+
 function refreshEditorImageUI() {
   const field = $('#image-upload-field');
   if (!field || !modalDraft) return;
   const hasImage = !!modalDraft.imageData;
+  const titleInput = $('#f-title');
+  if (titleInput && !titleInput.value && modalDraft.title) titleInput.value = modalDraft.title;
   const btnText = field.querySelector('.image-upload-btn span');
   if (btnText) btnText.textContent = hasImage ? 'Trocar foto' : 'Escolher foto';
   const actions = field.querySelector('.image-upload-actions');
@@ -3522,14 +3610,14 @@ async function applyImageCrop() {
   canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
   state.quickAdd.imageData = canvasToStorageDataUrl(canvas, true);
   state.quickAdd.cropRect = null;
-  renderModal();
+  refreshQuickAddPreviewUI();
 }
 function clearImageCrop() {
   if (!state.quickAdd?.originalImageData) return;
   setQuickTitleFromDom();
   state.quickAdd.imageData = state.quickAdd.originalImageData;
   state.quickAdd.cropRect = null;
-  renderModal();
+  refreshQuickAddPreviewUI();
 }
 
 // Crop pointer handlers
@@ -3677,6 +3765,22 @@ function updateFolderSelectionUI(rowSelector, attrName, value) {
   });
 }
 
+function refreshTagRowUI() {
+  const row = $('#tag-row');
+  if (!row || !modalDraft) return;
+  const inputValue = $('#f-tag')?.value || '';
+  row.innerHTML = `
+    ${modalDraft.tags.map(t => `
+      <span class="tag-chip" data-tag="${esc(t)}">
+        ${esc(t)}
+        <button class="tag-remove" data-remove-tag="${esc(t)}">${icon('x', 11)}</button>
+      </span>
+    `).join('')}
+    <input class="tag-input" id="f-tag" placeholder="adicionar tag..." value="${esc(inputValue)}">
+  `;
+  $('#f-tag')?.focus();
+}
+
 function setEditorTypeUI(type) {
   $('#url-field')?.style && ($('#url-field').style.display = ((type === 'link' || type === 'post' || type === 'file') ? '' : 'none'));
   $('#image-upload-field')?.style && ($('#image-upload-field').style.display = (type === 'image' ? '' : 'none'));
@@ -3796,7 +3900,7 @@ document.addEventListener('click', (e) => {
       syncDraftFromDom();
       modalDraft.tags = modalDraft.tags.filter(x => x !== t);
       state.editing = { ...modalDraft, isNew: !modalDraft.id };
-      renderModal();
+      refreshTagRowUI();
       return;
     }
     const quickCollChip = e.target.closest('#quick-coll-row [data-quick-coll]');
@@ -3942,7 +4046,8 @@ document.addEventListener('keydown', (e) => {
         modalDraft.tags.push(v);
         syncDraftFromDom();
         state.editing = { ...modalDraft, isNew: !modalDraft.id };
-        renderModal();
+        tagInput.value = '';
+        refreshTagRowUI();
       } else { tagInput.value = ''; }
       return;
     }
@@ -3950,7 +4055,7 @@ document.addEventListener('keydown', (e) => {
       modalDraft.tags.pop();
       syncDraftFromDom();
       state.editing = { ...modalDraft, isNew: !modalDraft.id };
-      renderModal();
+      refreshTagRowUI();
       return;
     }
   }
