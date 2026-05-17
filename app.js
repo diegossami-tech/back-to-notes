@@ -59,6 +59,12 @@ const CARD_TYPE_FILTERS = [
   { id: 'file', label: 'Arquivo', icon: 'folder' },
 ];
 
+const SIDEBAR_SYSTEM_TYPE_MAP = {
+  posts: 'post',
+  links: 'link',
+  prints: 'print',
+};
+
 const STORAGE_KEY = 'biblioteca:v1';
 const ONBOARDING_KEY = 'backtonotes:onboarding:v1';
 const SYNC_TABLE = 'backnotes_libraries';
@@ -1876,6 +1882,17 @@ function typeFilterCounts() {
     .filter(filter => filter.id === 'all' || filter.count > 0);
 }
 
+function globalTypeCounts() {
+  const counts = { all: 0 };
+  state.items.forEach(it => {
+    if (it.deletedAt) return;
+    counts.all++;
+    const kind = cardTypeKind(it);
+    counts[kind] = (counts[kind] || 0) + 1;
+  });
+  return counts;
+}
+
 function statsLine() {
   const now = Date.now();
   const week = 7 * 86400000;
@@ -2299,12 +2316,16 @@ function renderApp() {
   }
   const selectedCount = state.selectedIds?.length || 0;
   const stats = statsLine();
-  const textCount = state.items.filter(it => !it.deletedAt && cardTypeKind(it) === 'text').length;
+  const globalTypes = globalTypeCounts();
 
   // Collections hidden from the sidebar (still exist in state so any items
   // already in them aren't orphaned — just not surfaced in nav).
   const HIDDEN_FROM_SIDEBAR = new Set(['estudar', 'estudado', 'escritos']);
   const sysCols = state.collections.filter(c => c.system && !HIDDEN_FROM_SIDEBAR.has(c.id));
+  const sidebarTextItem = { id: 'text', name: 'Texto', icon: 'file-text', color: '#6b1f2a' };
+  const sidebarSystemTypeItems = sysCols
+    .map(col => ({ ...col, id: SIDEBAR_SYSTEM_TYPE_MAP[col.id], collectionId: col.id }))
+    .filter(item => item.id);
   const userCols = state.collections
     .filter(c => !c.system)
     .sort((a, b) => (b.pinnedAt || 0) - (a.pinnedAt || 0));
@@ -2338,14 +2359,11 @@ function renderApp() {
           <span class="col-item-left">${icon('inbox', 16)}<span>Tudo</span></span>
           <span class="col-item-right">${c.all || 0}</span>
         </button>
-        <button class="col-item ${state.activeCol === 'all' && state.activeKind === 'text' ? 'active' : ''}" data-action="set-kind" data-kind="text" data-root="all">
-          <span class="col-item-left">${icon('file-text', 16)}<span>Texto</span></span>
-          <span class="col-item-right">${textCount}</span>
-        </button>
+        ${renderSidebarTypeItem(sidebarTextItem, globalTypes.text || 0)}
 
         <div class="sidebar-section-label">Coleções</div>
         <div data-folder-area>
-          ${sysCols.map(col => renderColItem(col, state.activeCol === col.id, c[col.id] || 0, { editable: true })).join('')}
+          ${sidebarSystemTypeItems.map(item => renderSidebarTypeItem(item, globalTypes[item.id] || 0)).join('')}
         </div>
 
         <div class="sidebar-divider" aria-hidden="true"></div>
@@ -2445,6 +2463,23 @@ function renderApp() {
     </div>
   `;
   hydratePdfPreviews($('#app'));
+}
+
+function renderSidebarTypeItem(item, count) {
+  const active = state.activeCol === 'all' && state.activeKind === item.id;
+  const editLabel = item.collectionId ? 'Editar nome da coleção' : '';
+  return `
+    <button class="col-item ${active ? 'active' : ''}" data-action="set-kind" data-kind="${esc(item.id)}" data-root="all" style="--col-color:${item.color || 'var(--primary)'}">
+      <span class="col-item-left">
+        <span class="col-item-icon" style="color:${item.color || 'var(--primary)'}">${icon(item.icon || 'file-text', 16)}</span>
+        <span>${esc(item.name)}</span>
+      </span>
+      <span class="col-item-right">
+        ${item.collectionId ? `<span class="col-action col-edit" data-action="edit-col" data-id="${esc(item.collectionId)}" title="${esc(editLabel)}" aria-label="${esc(editLabel)}" draggable="false">${icon('pencil', 12)}</span>` : ''}
+        <span>${count}</span>
+      </span>
+    </button>
+  `;
 }
 
 function renderColItem(col, active, count, options = {}) {
