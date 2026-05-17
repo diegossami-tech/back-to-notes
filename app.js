@@ -2332,7 +2332,10 @@ function renderApp() {
   const sidebarSystemTypeItems = sysCols
     .map(col => ({ ...col, id: SIDEBAR_SYSTEM_TYPE_MAP[col.id], collectionId: col.id }))
     .filter(item => item.id);
-  sidebarSystemTypeItems.push({ id: 'document', name: 'Arquivo', icon: 'folder', color: '#87807a' });
+  if (!sidebarSystemTypeItems.some(item => item.id === 'document')) {
+    sidebarSystemTypeItems.push({ id: 'document', name: 'Arquivo', icon: 'folder', color: '#87807a' });
+  }
+  const sidebarTypeItems = uniqueSidebarTypeItems(sidebarSystemTypeItems);
   const userCols = state.collections
     .filter(c => !c.system)
     .sort((a, b) => (b.pinnedAt || 0) - (a.pinnedAt || 0));
@@ -2370,7 +2373,7 @@ function renderApp() {
 
         <div class="sidebar-section-label">Coleções</div>
         <div data-folder-area>
-          ${sidebarSystemTypeItems.map(item => renderSidebarTypeItem(item, globalTypes[item.id] || 0)).join('')}
+          ${sidebarTypeItems.map(item => renderSidebarTypeItem(item, globalTypes[item.id] || 0)).join('')}
         </div>
 
         <div class="sidebar-divider" aria-hidden="true"></div>
@@ -2470,6 +2473,16 @@ function renderApp() {
     </div>
   `;
   hydratePdfPreviews($('#app'));
+}
+
+function uniqueSidebarTypeItems(items) {
+  const seen = new Set();
+  return items.filter(item => {
+    const key = item.id || String(item.name || '').trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function renderSidebarTypeItem(item, count) {
