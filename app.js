@@ -10,7 +10,7 @@ const DEFAULT_COLLECTIONS = [
   { id: 'escritos', name: 'Meus Escritos', icon: 'feather',      color: '#6b1f2a', system: true },
   { id: 'posts',    name: 'Posts Salvos',  icon: 'bookmark',     color: '#7a5230', system: true },
   { id: 'links',    name: 'Links',         icon: 'link',         color: '#3d5a6c', system: true },
-  { id: 'prints',   name: 'Prints',        icon: 'image',        color: '#6a5687', system: true },
+  { id: 'prints',   name: 'Imagens',       icon: 'image',        color: '#6a5687', system: true },
 ];
 
 const ITEM_TYPES = [
@@ -18,7 +18,7 @@ const ITEM_TYPES = [
   { id: 'link',  label: 'Link',           icon: 'link' },
   { id: 'post',  label: 'Post Salvo',     icon: 'bookmark' },
   { id: 'file',  label: 'Arquivo',        icon: 'folder' },
-  { id: 'image', label: 'Imagem / Print', icon: 'image' },
+  { id: 'image', label: 'Imagem', icon: 'image' },
 ];
 
 const SORT_OPTIONS = [
@@ -51,7 +51,7 @@ const TEXT_STYLE_OPTIONS = {
 const CARD_TYPE_FILTERS = [
   { id: 'all', label: 'Tudo', icon: 'inbox' },
   { id: 'text', label: 'Texto', icon: 'file-text' },
-  { id: 'print', label: 'Print', icon: 'image' },
+  { id: 'print', label: 'Imagem', icon: 'image' },
   { id: 'link', label: 'Link', icon: 'link' },
   { id: 'post', label: 'Post', icon: 'bookmark' },
   { id: 'pdf', label: 'PDF', icon: 'file-text' },
@@ -271,7 +271,12 @@ function syncDefaultCollections(collections) {
   const existing = Array.isArray(collections) ? collections : [];
   const byId = new Map(existing.map(c => [c.id, c]));
   const systemIds = new Set(DEFAULT_COLLECTIONS.map(c => c.id));
-  const systemCols = DEFAULT_COLLECTIONS.map(def => ({ ...def, ...(byId.get(def.id) || {}), system: true }));
+  const systemCols = DEFAULT_COLLECTIONS.map(def => {
+    const current = byId.get(def.id) || {};
+    const next = { ...def, ...current, system: true };
+    if (def.id === 'prints' && /^prints?$/i.test(String(current.name || ''))) next.name = def.name;
+    return next;
+  });
   const userCols = existing.filter(c => !systemIds.has(c.id));
   return [...systemCols, ...userCols];
 }
@@ -1706,7 +1711,7 @@ function globalSearchResults() {
 }
 
 function defaultQuickTitle(draft) {
-  if (draft.type === 'image') return 'Print salvo';
+  if (draft.type === 'image') return 'Imagem salva';
   if (draft.type === 'link') return getDomain(draft.url) || 'Link salvo';
   return 'Nota salva';
 }
@@ -1827,7 +1832,7 @@ async function handleEditorImageUpload(file) {
       url: modalDraft.url || '',
       collection: modalDraft.collection || activeUserCollectionId(),
     };
-    if (!modalDraft.tags?.length) modalDraft.tags = ['print'];
+    if (!modalDraft.tags?.length) modalDraft.tags = ['imagem'];
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
     refreshEditorImageUI();
     showToast('Foto carregada');
@@ -1855,7 +1860,7 @@ async function attachImageToEditingItem(file, sourceLabel = 'Imagem colada') {
       fileSize: 0,
       collection: modalDraft.collection || activeUserCollectionId(),
     };
-    if (!modalDraft.tags?.length) modalDraft.tags = ['print'];
+    if (!modalDraft.tags?.length) modalDraft.tags = ['imagem'];
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
     refreshEditorImageUI();
     showToast(sourceLabel);
@@ -2969,7 +2974,7 @@ function renderSyncPanel() {
             ` : `
               <div class="sync-hero">
                 <h2>Entre ou crie uma conta</h2>
-                <p>Sincronize suas notas, links, prints e arquivos entre o computador e o celular.</p>
+                <p>Sincronize suas notas, links, imagens e arquivos entre o computador e o celular.</p>
               </div>
               ${syncState.lastError ? `<p class="sync-error">${esc(syncState.lastError)}</p>` : ''}
               <button class="sync-google-btn" data-action="sync-google" type="button">
@@ -3021,7 +3026,7 @@ function renderOnboarding() {
     {
       icon: 'folder',
       title: 'Organize por pastas',
-      text: 'Crie pastas para separar estudos, ideias, prints, PDFs e outros arquivos.',
+      text: 'Crie pastas para separar estudos, ideias, imagens, PDFs e outros arquivos.',
     },
     {
       icon: 'search',
@@ -3503,7 +3508,7 @@ window.addEventListener('drop', async (e) => {
         type: 'image', title: file.name.replace(/\.[^.]+$/, ''), content: '', url: '',
         imageData, originalImageData: imageData, cropRect: null,
         collection: activeUserCollectionId(),
-        tags: ['print'], previewLabel: 'Imagem solta',
+        tags: ['imagem'], previewLabel: 'Imagem solta',
       });
       return;
     }
@@ -3755,7 +3760,7 @@ async function draftFromClipboardData(clipboardData) {
         type: 'image', title: '', content: text || '', url: '',
         imageData, originalImageData: imageData, cropRect: null,
         collection: activeUserCollectionId(),
-        tags: ['print'], previewLabel: text ? 'Texto e imagem colados' : 'Imagem colada',
+        tags: ['imagem'], previewLabel: text ? 'Texto e imagem colados' : 'Imagem colada',
       };
     }
   }

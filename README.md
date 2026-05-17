@@ -1,6 +1,6 @@
 # BackToNotes
 
-App estático em HTML, CSS e JavaScript puro para organizar links, notas, posts salvos, prints e arquivos em coleções pessoais.
+App estático em HTML, CSS e JavaScript puro para organizar links, notas, posts salvos, imagens e arquivos em coleções pessoais.
 
 ## Visual
 
@@ -11,7 +11,7 @@ App estático em HTML, CSS e JavaScript puro para organizar links, notas, posts 
 
 ## O que tem
 
-- **Coleções** pré-definidas (Para Estudar, Já Estudei, Meus Escritos, Posts Salvos, Links, Prints) + pastas personalizadas
+- **Coleções** pré-definidas (Para Estudar, Já Estudei, Meus Escritos, Posts Salvos, Links, Imagens) + pastas personalizadas
 - **Drag-and-drop** entre coleções (HTML5 nativo no desktop, long-press no celular)
 - **Quick-add por clipboard** — cole link / texto / imagem em qualquer lugar
 - **Drop externo** — arraste URLs ou arquivos do desktop direto pra dentro
