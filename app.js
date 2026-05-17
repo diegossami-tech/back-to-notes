@@ -1492,6 +1492,14 @@ function deleteCollection(id) {
 }
 
 function setActiveCol(id) {
+  const sameView = state.activeCol === id && !state.activeTag && state.activeKind === 'all' && !state.selectMode && !state.selectedIds.length;
+  if (sameView) {
+    if (state.showSidebar) {
+      state.showSidebar = false;
+      renderApp();
+    }
+    return;
+  }
   state.activeCol = id;
   state.activeTag = null;
   state.activeKind = 'all';
@@ -1502,13 +1510,17 @@ function setActiveCol(id) {
 }
 
 function setActiveTag(tag) {
-  state.activeTag = state.activeTag === tag ? null : tag;
+  const nextTag = state.activeTag === tag ? null : tag;
+  if (state.activeTag === nextTag && !state.selectedIds.length) return;
+  state.activeTag = nextTag;
   state.selectedIds = [];
   renderApp();
 }
 
 function setActiveKind(kind) {
-  state.activeKind = kind || 'all';
+  const nextKind = kind || 'all';
+  if (state.activeKind === nextKind && !state.activeTag && !state.selectedIds.length) return;
+  state.activeKind = nextKind;
   state.activeTag = null;
   state.selectedIds = [];
   renderApp();
