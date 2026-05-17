@@ -56,7 +56,7 @@ const CARD_TYPE_FILTERS = [
   { id: 'post', label: 'Post', icon: 'bookmark' },
   { id: 'pdf', label: 'PDF', icon: 'file-text' },
   { id: 'word', label: 'Word', icon: 'file-text' },
-  { id: 'file', label: 'Arquivo', icon: 'folder' },
+  { id: 'document', label: 'Arquivo', icon: 'folder' },
 ];
 
 const SIDEBAR_SYSTEM_TYPE_MAP = {
@@ -64,6 +64,7 @@ const SIDEBAR_SYSTEM_TYPE_MAP = {
   links: 'link',
   prints: 'print',
 };
+const DOCUMENT_KINDS = new Set(['pdf', 'word', 'file']);
 
 const STORAGE_KEY = 'biblioteca:v1';
 const ONBOARDING_KEY = 'backtonotes:onboarding:v1';
@@ -208,6 +209,13 @@ function cardTypeKind(item) {
   if (item.type === 'post') return 'post';
   if (item.type === 'note') return 'text';
   return 'file';
+}
+
+function itemMatchesKind(item, kind) {
+  if (!kind || kind === 'all') return true;
+  const itemKind = cardTypeKind(item);
+  if (kind === 'document') return DOCUMENT_KINDS.has(itemKind);
+  return itemKind === kind;
 }
 
 function rememberPdfPreviewUrl(url, scope) {
@@ -1831,7 +1839,7 @@ function filteredItems() {
   const q = state.search.trim().toLowerCase();
   let items = state.items.filter(it => {
     if (!itemInActiveScope(it)) return false;
-    if (state.activeKind && state.activeKind !== 'all' && cardTypeKind(it) !== state.activeKind) return false;
+    if (!itemMatchesKind(it, state.activeKind)) return false;
     if (state.activeTag && !(it.tags || []).includes(state.activeTag)) return false;
     if (!q) return true;
     return (
@@ -1870,15 +1878,11 @@ function tagCounts() {
 }
 
 function typeFilterCounts() {
-  const counts = { all: 0 };
-  state.items.forEach(it => {
-    if (!itemInActiveScope(it)) return;
-    counts.all++;
-    const kind = cardTypeKind(it);
-    counts[kind] = (counts[kind] || 0) + 1;
-  });
   return CARD_TYPE_FILTERS
-    .map(filter => ({ ...filter, count: counts[filter.id] || 0 }))
+    .map(filter => ({
+      ...filter,
+      count: state.items.filter(it => itemInActiveScope(it) && itemMatchesKind(it, filter.id)).length,
+    }))
     .filter(filter => filter.id === 'all' || filter.count > 0);
 }
 
@@ -1889,6 +1893,7 @@ function globalTypeCounts() {
     counts.all++;
     const kind = cardTypeKind(it);
     counts[kind] = (counts[kind] || 0) + 1;
+    if (DOCUMENT_KINDS.has(kind)) counts.document = (counts.document || 0) + 1;
   });
   return counts;
 }
@@ -2308,7 +2313,8 @@ function renderApp() {
     : state.activeCol === 'lixeira' ? 'Lixeira'
     : (cur?.name || 'Coleção');
   const typeFilters = typeFilterCounts();
-  if (state.activeKind !== 'all' && !typeFilters.some(f => f.id === state.activeKind)) state.activeKind = 'all';
+  const validKindIds = new Set(CARD_TYPE_FILTERS.map(f => f.id));
+  if (state.activeKind !== 'all' && !validKindIds.has(state.activeKind)) state.activeKind = 'all';
   const items = filteredItems();
   const visibleIds = new Set(items.map(i => i.id));
   if (state.selectedIds?.some(id => !visibleIds.has(id))) {
@@ -2326,6 +2332,7 @@ function renderApp() {
   const sidebarSystemTypeItems = sysCols
     .map(col => ({ ...col, id: SIDEBAR_SYSTEM_TYPE_MAP[col.id], collectionId: col.id }))
     .filter(item => item.id);
+  sidebarSystemTypeItems.push({ id: 'document', name: 'Arquivo', icon: 'folder', color: '#87807a' });
   const userCols = state.collections
     .filter(c => !c.system)
     .sort((a, b) => (b.pinnedAt || 0) - (a.pinnedAt || 0));
@@ -3371,6 +3378,7 @@ function statsActionLabel(action) {
     'post': 'Post',
     'image': 'Imagem',
     'file': 'Arquivo',
+    'document': 'Arquivo',
   };
   return labels[action] || action || 'Outro';
 }
