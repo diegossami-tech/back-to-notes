@@ -2333,7 +2333,7 @@ function renderApp() {
     .map(col => ({ ...col, id: SIDEBAR_SYSTEM_TYPE_MAP[col.id], collectionId: col.id }))
     .filter(item => item.id);
   if (!sidebarSystemTypeItems.some(item => item.id === 'document')) {
-    sidebarSystemTypeItems.push({ id: 'document', name: 'Arquivo', icon: 'folder', color: '#87807a' });
+    sidebarSystemTypeItems.push({ id: 'document', name: 'Documentos', icon: 'folder', color: '#87807a' });
   }
   const sidebarTypeItems = uniqueSidebarTypeItems(sidebarSystemTypeItems);
   const userCols = state.collections
@@ -3391,7 +3391,7 @@ function statsActionLabel(action) {
     'post': 'Post',
     'image': 'Imagem',
     'file': 'Arquivo',
-    'document': 'Arquivo',
+    'document': 'Documentos',
   };
   return labels[action] || action || 'Outro';
 }
