@@ -4162,7 +4162,45 @@ document.addEventListener('click', (e) => {
 });
 
 // ============ KEYBOARD ============
+function handleEscapeClose(e) {
+  const isEscape = e.key === 'Escape' || e.key === 'Esc' || e.code === 'Escape';
+  if (!isEscape) return false;
+
+  const confirmRoot = $('#confirm-root');
+  if (confirmRoot?.querySelector('.confirm-overlay')) return false;
+
+  const handled = !!(
+    confirmRoot?.querySelector('.pdf-reader-overlay, .lightbox-overlay, .sync-overlay') ||
+    state.editing ||
+    state.viewing ||
+    state.quickAdd ||
+    state.newFolder ||
+    state.showSearch ||
+    state.showOnboarding ||
+    state.showSidebar
+  );
+  if (!handled) return false;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (confirmRoot?.querySelector('.pdf-reader-overlay')) closePdfReader();
+  else if (confirmRoot?.querySelector('.lightbox-overlay')) closeLightbox();
+  else if (confirmRoot?.querySelector('.sync-overlay')) closeSyncPanel();
+  else if (state.editing) closeEditor();
+  else if (state.viewing) closeViewer();
+  else if (state.quickAdd) closeQuickAdd();
+  else if (state.newFolder) closeNewFolder();
+  else if (state.showSearch) closeSearch();
+  else if (state.showOnboarding) closeOnboarding();
+  else if (state.showSidebar) toggleSidebar(false);
+  return true;
+}
+
+document.addEventListener('keydown', handleEscapeClose, true);
+
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' || e.key === 'Esc' || e.code === 'Escape') return;
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); return; }
   if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); openEditor(null); return; }
@@ -4216,15 +4254,6 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
-  if (e.key === 'Escape') {
-    if (state.editing) closeEditor();
-    else if (state.viewing) closeViewer();
-    else if (state.quickAdd) closeQuickAdd();
-    else if (state.newFolder) closeNewFolder();
-    else if (state.showSearch) closeSearch();
-    else if (state.showOnboarding) closeOnboarding();
-    else if (state.showSidebar) toggleSidebar(false);
-  }
 });
 
 // ============ INPUTS ============
