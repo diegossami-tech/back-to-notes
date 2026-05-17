@@ -1152,6 +1152,21 @@ body.select-mode .fab { opacity: 0; pointer-events: none; transform: translateY(
   white-space: nowrap;
 }
 .bulk-folder-btn:hover { border-color: var(--primary); background: var(--paper); }
+.bulk-folder-btn.danger {
+  color: var(--burgundy);
+  border-color: color-mix(in srgb, var(--burgundy) 28%, var(--rule));
+}
+.bulk-folder-btn.danger:hover {
+  background: color-mix(in srgb, var(--burgundy) 8%, var(--paper));
+  border-color: var(--burgundy);
+}
+.bulk-folder-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.bulk-trash .bulk-targets {
+  justify-content: flex-end;
+}
 .bulk-empty {
   color: var(--muted);
   font-family: var(--font-serif);

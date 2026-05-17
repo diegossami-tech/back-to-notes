@@ -1363,7 +1363,7 @@ function toggleSelectMode(force) {
 
 function toggleItemSelection(id) {
   if (!id) return;
-  const item = state.items.find(i => i.id === id && !i.deletedAt);
+  const item = state.items.find(i => i.id === id && (state.activeCol === 'lixeira' ? i.deletedAt : !i.deletedAt));
   if (!item) return;
   const set = selectedItemSet();
   const selected = !set.has(id);
@@ -1387,7 +1387,40 @@ function updateSelectionDom(id, selected) {
   const total = document.querySelector('.bulk-status strong');
   const label = document.querySelector('.bulk-status span');
   if (total) total.textContent = count;
-  if (label) label.textContent = count === 1 ? 'card selecionado' : 'cards selecionados';
+  if (label) {
+    const noun = state.activeCol === 'lixeira' ? 'item' : 'card';
+    label.textContent = count === 1 ? `${noun} selecionado` : `${noun}s selecionados`;
+  }
+}
+
+function selectAllVisibleItems() {
+  const ids = filteredItems().map(item => item.id);
+  if (!ids.length) return;
+  const allSelected = ids.every(id => state.selectedIds.includes(id));
+  state.selectedIds = allSelected ? [] : ids;
+  state.selectMode = true;
+  renderApp();
+}
+
+function permanentlyDeleteSelectedTrash() {
+  const ids = new Set(state.selectedIds || []);
+  const count = state.items.filter(item => ids.has(item.id) && item.deletedAt).length;
+  if (!count) return;
+  confirmDialog({
+    title: count === 1 ? 'Apagar item definitivamente?' : `Apagar ${count} itens definitivamente?`,
+    message: 'Esta acao nao pode ser desfeita.',
+    confirmText: count === 1 ? 'Apagar para sempre' : 'Apagar selecionados',
+    cancelText: 'Cancelar',
+    danger: true,
+  }).then((ok) => {
+    if (!ok) return;
+    state.items = state.items.filter(item => !(ids.has(item.id) && item.deletedAt));
+    state.selectedIds = [];
+    state.selectMode = false;
+    persist();
+    renderAll();
+    showToast(count === 1 ? 'Item apagado para sempre' : `${count} itens apagados para sempre`);
+  });
 }
 
 function moveSelectedItemsToCollection(collectionId) {
@@ -2044,6 +2077,30 @@ window.state = state;
 // ============ RENDER: MAIN APP ============
 function renderBulkMoveBar(folders, selectedCount) {
   if (!state.selectMode) return '';
+  const isTrashView = state.activeCol === 'lixeira';
+  const visibleCount = filteredItems().length;
+  if (isTrashView) {
+    const allSelected = visibleCount > 0 && selectedCount === visibleCount;
+    return `
+      <div class="bulk-bar bulk-trash">
+        <div class="bulk-status">
+          <strong>${selectedCount}</strong>
+          <span>${selectedCount === 1 ? 'item selecionado' : 'itens selecionados'}</span>
+        </div>
+        <div class="bulk-targets" aria-label="Acoes da lixeira">
+          <button class="bulk-folder-btn" data-action="select-all-visible" title="${allSelected ? 'Limpar seleção' : 'Selecionar tudo'}">
+            ${icon(allSelected ? 'x' : 'check-circle', 15)}
+            <span>${allSelected ? 'Limpar seleção' : 'Selecionar tudo'}</span>
+          </button>
+          <button class="bulk-folder-btn danger" data-action="delete-selected-trash" ${selectedCount ? '' : 'disabled'} title="Apagar selecionados para sempre">
+            ${icon('trash', 15)}
+            <span>Apagar para sempre</span>
+          </button>
+        </div>
+        <button class="bulk-close" data-action="clear-selection" title="Sair da seleção" aria-label="Sair da seleção">${icon('x', 15)}</button>
+      </div>
+    `;
+  }
   return `
     <div class="bulk-bar">
       <div class="bulk-status">
@@ -2163,7 +2220,7 @@ function renderApp() {
               <button class="header-login-btn ${syncState.user ? 'online' : ''}" data-action="open-sync" title="${esc(syncTitle())}">
                 <span>${syncState.user ? 'Logado' : 'Entrar'}</span>
               </button>
-              ${items.length && state.activeCol !== 'lixeira' ? `<button class="icon-btn ${state.selectMode ? 'active' : ''}" data-action="toggle-select-mode" title="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}" aria-label="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}">${icon('check-circle', 16)}</button>` : ''}
+              ${items.length ? `<button class="icon-btn ${state.selectMode ? 'active' : ''}" data-action="toggle-select-mode" title="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}" aria-label="${state.selectMode ? 'Sair da seleção' : 'Selecionar vários'}">${icon('check-circle', 16)}</button>` : ''}
               <button class="icon-btn" data-action="export-library" title="Exportar" aria-label="Exportar JSON">${icon('download', 16)}</button>
               <button class="icon-btn" data-action="open-search" title="Buscar  ⌘K" aria-label="Buscar">${icon('search', 17)}</button>
               <button class="icon-btn primary" data-action="new-item" title="Adicionar  ⌘N" aria-label="Adicionar item">${icon('plus', 18)}</button>
@@ -4042,6 +4099,8 @@ document.addEventListener('click', (e) => {
     case 'toggle-card-select': toggleItemSelection(id); break;
     case 'toggle-pin-item': toggleItemPin(id); break;
     case 'clear-selection': clearSelection({ exit: true }); break;
+    case 'select-all-visible': selectAllVisibleItems(); break;
+    case 'delete-selected-trash': permanentlyDeleteSelectedTrash(); break;
     case 'bulk-move': moveSelectedItemsToCollection(id); break;
     case 'new-item': openEditor(null); break;
     case 'view':
