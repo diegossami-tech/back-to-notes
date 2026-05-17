@@ -2299,6 +2299,7 @@ function renderApp() {
   }
   const selectedCount = state.selectedIds?.length || 0;
   const stats = statsLine();
+  const textCount = state.items.filter(it => !it.deletedAt && cardTypeKind(it) === 'text').length;
 
   // Collections hidden from the sidebar (still exist in state so any items
   // already in them aren't orphaned — just not surfaced in nav).
@@ -2333,9 +2334,13 @@ function renderApp() {
           </div>
         </div>
 
-        <button class="col-item ${state.activeCol === 'all' ? 'active' : ''}" data-action="set-col" data-id="all" data-drop-col="all">
+        <button class="col-item ${state.activeCol === 'all' && state.activeKind === 'all' ? 'active' : ''}" data-action="set-col" data-id="all" data-drop-col="all">
           <span class="col-item-left">${icon('inbox', 16)}<span>Tudo</span></span>
           <span class="col-item-right">${c.all || 0}</span>
+        </button>
+        <button class="col-item ${state.activeCol === 'all' && state.activeKind === 'text' ? 'active' : ''}" data-action="set-kind" data-kind="text" data-root="all">
+          <span class="col-item-left">${icon('file-text', 16)}<span>Texto</span></span>
+          <span class="col-item-right">${textCount}</span>
         </button>
 
         <div class="sidebar-section-label">Coleções</div>
@@ -4424,7 +4429,10 @@ document.addEventListener('click', (e) => {
     case 'close-sidebar': toggleSidebar(false); break;
     case 'set-tag': setActiveTag(actionEl.dataset.tag); break;
     case 'clear-tag': state.activeTag = null; renderApp(); break;
-    case 'set-kind': setActiveKind(actionEl.dataset.kind); break;
+    case 'set-kind':
+      if (actionEl.dataset.root === 'all') state.activeCol = 'all';
+      setActiveKind(actionEl.dataset.kind);
+      break;
     case 'cycle-sort': cycleSortMode(); break;
     case 'export-library': exportLibrary(); break;
     case 'import-library': importLibrary(); break;
