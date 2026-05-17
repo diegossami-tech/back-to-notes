@@ -1,5 +1,5 @@
 // ============================================================
-//  Backtonotes — tweaks.js
+//  BackToNotes - tweaks.js
 //  Tweakable controls panel. Vanilla JS, no React dependency.
 //  Speaks the host's editor protocol so the toolbar toggle works,
 //  and exposes window.btnOpenTweaks() so the app can open it too.

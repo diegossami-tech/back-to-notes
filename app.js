@@ -1,5 +1,5 @@
 // ============================================================
-//  Backtonotes — app.js
+//  BackToNotes - app.js
 //  Vanilla JS. State + render + events. Mobile-first responsive.
 // ============================================================
 
@@ -1003,7 +1003,7 @@ function readableSyncError(err) {
 }
 
 function scheduleCloudPush() {
-  // BackNotes is local-first: user data is saved in this browser.
+  // BackToNotes is local-first: user data is saved in this browser.
   // Cloud sync only runs when the user explicitly clicks "Sincronizar agora".
 }
 
@@ -2077,7 +2077,7 @@ function renderApp() {
       <header class="topbar">
         <button class="topbar-menu" data-action="open-sidebar" aria-label="Abrir menu">${icon('menu', 20)}</button>
         <div class="topbar-brand" data-action="set-col" data-id="all" role="button" tabindex="0">
-          <span class="brand-word"><span>Back</span><span>Notes</span></span>
+          <span class="brand-word"><span>BackTo</span><span>Notes</span></span>
         </div>
         <button class="topbar-login-btn ${syncState.user ? 'online' : ''}" data-action="open-sync" title="${esc(syncTitle())}">
           <span>${syncState.user ? 'Logado' : 'Entrar'}</span>
@@ -2092,7 +2092,7 @@ function renderApp() {
         <div class="sidebar-logo">
           <div class="sidebar-logo-box">${icon('library', 22)}</div>
           <div>
-            <div class="sidebar-logo-name"><span class="brand-word"><span>Back</span><span>Notes</span></span></div>
+            <div class="sidebar-logo-name"><span class="brand-word"><span>BackTo</span><span>Notes</span></span></div>
           </div>
         </div>
 
@@ -2926,7 +2926,7 @@ function renderSyncPanel() {
     <div class="overlay center sync-overlay" data-sync-overlay>
       <div class="panel sync-panel" data-stop-prop role="dialog" aria-modal="true" aria-label="Sincronizacao Supabase">
         <div class="modal-head">
-          <span class="modal-head-label">BackNotes Sync</span>
+          <span class="modal-head-label">BackToNotes Sync</span>
           <button class="icon-btn" data-action="close-sync" title="Fechar">${icon('x', 17)}</button>
         </div>
         <div class="sync-body">
