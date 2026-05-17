@@ -53,6 +53,7 @@ Os dados ficam salvos no `localStorage` do navegador. Para fazer backup ou mover
 window.BACKNOTES_SUPABASE = {
   url: 'https://SEU-PROJETO.supabase.co',
   anonKey: 'SUA_ANON_KEY_PUBLICA',
+  ownerEmails: ['seu-email@gmail.com'],
 };
 ```
 
@@ -60,6 +61,12 @@ window.BACKNOTES_SUPABASE = {
 5. No app, abra a sidebar e clique em **Sync** para criar conta/entrar.
 
 Esta primeira versão sincroniza a biblioteca como um snapshot por usuário: cards, pastas, textos, links e imagens salvas no próprio card. Arquivos grandes em IndexedDB ainda dependem do navegador local; o próximo passo é ligar esses arquivos ao Supabase Storage.
+
+## Painel estatistico privado
+
+O arquivo `supabase-schema.sql` tambem cria a tabela `backnotes_analytics_events`. Ela registra visitas e acoes anonimas por sessao, como abrir cards, buscar, criar pastas, salvar cards, colar texto/link/imagem e upload de arquivos.
+
+O botao **Stats** aparece na sidebar somente quando o usuario logado estiver em `ownerEmails` no `supabase-config.js` e tambem liberado na policy `backnotes analytics owner read` dentro do SQL.
 
 ## Limitações conhecidas
 
@@ -69,4 +76,4 @@ Esta primeira versão sincroniza a biblioteca como um snapshot por usuário: car
 
 ## Tecnologia
 
-Vanilla JS, sem frameworks ou build step. Funciona em qualquer navegador moderno. Sem cookies, sem rastreamento, sem servidor — tudo no cliente.
+Vanilla JS, sem frameworks ou build step. Funciona em qualquer navegador moderno. Sem cookies; o painel estatistico usa eventos anonimos no Supabase quando configurado.

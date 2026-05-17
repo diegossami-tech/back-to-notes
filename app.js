@@ -62,6 +62,8 @@ const CARD_TYPE_FILTERS = [
 const STORAGE_KEY = 'biblioteca:v1';
 const ONBOARDING_KEY = 'backtonotes:onboarding:v1';
 const SYNC_TABLE = 'backnotes_libraries';
+const ANALYTICS_TABLE = 'backnotes_analytics_events';
+const ANALYTICS_SESSION_KEY = 'backtonotes:analytics-session:v1';
 const FILE_DB_NAME = 'backtonotes-files';
 const FILE_DB_VERSION = 1;
 const FILE_STORE = 'files';
@@ -767,6 +769,7 @@ let state = {
   showSearch: false,
   showSidebar: false,
   showOnboarding: false,
+  showStats: false,
   loading: true,
 };
 
@@ -774,6 +777,8 @@ let saveTimer;
 let saveErrorShown = false;
 let syncTimer;
 let suppressCloudPush = false;
+let pageViewTracked = false;
+let analyticsBlocked = false;
 const syncState = {
   client: null,
   configured: false,
@@ -782,6 +787,12 @@ const syncState = {
   status: 'offline',
   lastSync: null,
   lastError: '',
+};
+const analyticsState = {
+  loading: false,
+  error: '',
+  events: [],
+  lastLoaded: null,
 };
 
 function persist() {
@@ -905,15 +916,153 @@ function openOnboarding() {
 
 function syncConfig() {
   const cfg = window.BACKNOTES_SUPABASE || {};
+  const ownerEmails = Array.isArray(cfg.ownerEmails) ? cfg.ownerEmails : [];
   return {
     url: String(cfg.url || '').trim(),
     anonKey: String(cfg.anonKey || '').trim(),
+    ownerEmails: ownerEmails.map(email => String(email || '').trim().toLowerCase()).filter(Boolean),
   };
 }
 
 function canUseSync() {
   const cfg = syncConfig();
   return !!(cfg.url && cfg.anonKey);
+}
+
+function analyticsSessionId() {
+  try {
+    let id = localStorage.getItem(ANALYTICS_SESSION_KEY);
+    if (!id) {
+      id = 's_' + uid();
+      localStorage.setItem(ANALYTICS_SESSION_KEY, id);
+    }
+    return id;
+  } catch {
+    return 's_' + uid();
+  }
+}
+
+function isStatsOwner() {
+  const email = String(syncState.user?.email || '').trim().toLowerCase();
+  if (!email) return false;
+  const owners = syncConfig().ownerEmails;
+  return owners.length > 0 && owners.includes(email);
+}
+
+function analyticsMetadata(extra = {}) {
+  return {
+    active_col: state.activeCol,
+    active_kind: state.activeKind,
+    viewport: isMobile() ? 'mobile' : 'desktop',
+    width: window.innerWidth || 0,
+    height: window.innerHeight || 0,
+    ...extra,
+  };
+}
+
+async function trackEvent(eventName, eventTarget = '', metadata = {}) {
+  if (analyticsBlocked || !syncState.client || !syncState.configured) return;
+  const name = String(eventName || '').slice(0, 80);
+  if (!name) return;
+  try {
+    await syncState.client.from(ANALYTICS_TABLE).insert({
+      session_id: analyticsSessionId(),
+      user_id: syncState.user?.id || null,
+      event_name: name,
+      event_target: String(eventTarget || '').slice(0, 120),
+      path: `${location.pathname}${location.search}`.slice(0, 220),
+      metadata: analyticsMetadata(metadata),
+      user_agent: navigator.userAgent.slice(0, 260),
+    });
+  } catch (err) {
+    const message = String(err?.message || err || '');
+    if (/relation .* does not exist|schema cache|backnotes_analytics_events|permission denied|row-level security/i.test(message)) {
+      analyticsBlocked = true;
+    }
+    // Analytics should never interrupt saving notes or browsing.
+    console.warn('Analytics event skipped:', err);
+  }
+}
+
+function trackPageViewOnce() {
+  if (pageViewTracked) return;
+  pageViewTracked = true;
+  trackEvent('page_view', 'app', {
+    referrer: document.referrer ? document.referrer.slice(0, 220) : '',
+    title: document.title,
+  });
+}
+
+function summarizeAnalytics(events = []) {
+  const now = Date.now();
+  const dayMs = 86400000;
+  const since = (days) => events.filter(e => new Date(e.created_at).getTime() >= now - (days * dayMs));
+  const uniqueSessions = (rows) => new Set(rows.map(e => e.session_id).filter(Boolean)).size;
+  const countBy = (rows, keyFn) => {
+    const map = new Map();
+    rows.forEach(row => {
+      const key = keyFn(row);
+      if (!key) return;
+      map.set(key, (map.get(key) || 0) + 1);
+    });
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  };
+  const last24h = since(1);
+  const last7d = since(7);
+  const last30d = since(30);
+  const actions = countBy(events.filter(e => e.event_name === 'action'), e => e.event_target).slice(0, 8);
+  const cards = countBy(events.filter(e => e.event_name === 'card_saved'), e => e.event_target || e.metadata?.type).slice(0, 6);
+  const devices = countBy(events, e => e.metadata?.viewport || 'desconhecido');
+  return {
+    totalEvents: events.length,
+    visitors24h: uniqueSessions(last24h),
+    visitors7d: uniqueSessions(last7d),
+    visitors30d: uniqueSessions(last30d),
+    actions,
+    cards,
+    devices,
+  };
+}
+
+async function loadAnalyticsPanel() {
+  state.showStats = true;
+  if (!isStatsOwner()) {
+    analyticsState.error = 'Entre com o e-mail dono configurado para ver as estatisticas.';
+    analyticsState.events = [];
+    renderStatsPanel();
+    return;
+  }
+  if (!syncState.client) {
+    analyticsState.error = 'Supabase ainda nao carregou.';
+    renderStatsPanel();
+    return;
+  }
+  analyticsState.loading = true;
+  analyticsState.error = '';
+  renderStatsPanel();
+  try {
+    const since = new Date(Date.now() - 30 * 86400000).toISOString();
+    const { data, error } = await syncState.client
+      .from(ANALYTICS_TABLE)
+      .select('created_at,session_id,event_name,event_target,metadata')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(2500);
+    if (error) throw error;
+    analyticsState.events = Array.isArray(data) ? data : [];
+    analyticsState.lastLoaded = Date.now();
+  } catch (err) {
+    console.error(err);
+    analyticsState.error = readableSyncError(err) || 'Nao foi possivel carregar as estatisticas.';
+  } finally {
+    analyticsState.loading = false;
+    renderStatsPanel();
+  }
+}
+
+function closeStatsPanel() {
+  state.showStats = false;
+  renderStatsPanel();
 }
 
 function loadSupabaseClient() {
@@ -1003,6 +1152,12 @@ function readableSyncError(err) {
   const code = String(err?.error_code || err?.code || '');
   if (/failed to fetch|networkerror|load failed/i.test(message)) {
     return 'Nao consegui conectar ao Supabase. Confira se o Project URL esta correto em supabase-config.js.';
+  }
+  if (/relation .* does not exist|schema cache|backnotes_analytics_events/i.test(message)) {
+    return 'A tabela de estatisticas ainda nao existe. Rode o supabase-schema.sql atualizado no SQL Editor.';
+  }
+  if (/permission denied|row-level security|not authorized|violates row-level/i.test(message)) {
+    return 'Seu usuario nao tem permissao para ver este painel. Confira o e-mail dono no supabase-schema.sql.';
   }
   if (/weak_password/i.test(code) || /password.*at least 6 characters/i.test(message)) {
     return 'A senha precisa ter pelo menos 6 caracteres.';
@@ -1112,6 +1267,7 @@ async function initSync() {
     renderApp();
   });
   renderApp();
+  trackPageViewOnce();
 }
 
 // ============ THUMB ENRICHMENT ============
@@ -1179,6 +1335,7 @@ function saveItem(item) {
   renderAll();
   // Kick off thumb enrichment if this item has a URL and no thumb yet.
   const saved = state.items.find(i => i.id === (item.id || state.items[0]?.id));
+  if (saved) trackEvent('card_saved', cardTypeKind(saved), { type: saved.type || '', has_file: !!saved.fileStorageId, has_image: !!saved.imageData });
   if (saved?.url && !saved.thumbUrl && !saved.thumbFailed) {
     enrichItemAsync(saved.id);
   }
@@ -1868,6 +2025,7 @@ async function handleEditorImageUpload(file) {
     if (!modalDraft.tags?.length) modalDraft.tags = ['imagem'];
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
     refreshEditorImageUI();
+    trackEvent('action', 'upload_image', { file_type: file.type || '', size: file.size || 0 });
     showToast('Foto carregada');
   } catch (err) {
     console.error(err);
@@ -1896,6 +2054,7 @@ async function attachImageToEditingItem(file, sourceLabel = 'Imagem colada') {
     if (!modalDraft.tags?.length) modalDraft.tags = ['imagem'];
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
     refreshEditorImageUI();
+    trackEvent('action', 'paste_image', { file_type: file.type || '', size: file.size || 0 });
     showToast(sourceLabel);
     return true;
   } catch (err) {
@@ -1932,6 +2091,7 @@ async function handleEditorFileUpload(file) {
     };
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
     refreshEditorFileUI();
+    trackEvent('action', 'upload_file', { file_type: stored.type || '', size: stored.size || 0 });
     showToast('Arquivo carregado');
   } catch (err) {
     console.error(err);
@@ -2201,6 +2361,7 @@ function renderApp() {
           <button data-action="export-library" title="Exportar tudo como JSON">${icon('download', 14)}<span>Exportar</span></button>
           <button data-action="import-library" title="Importar JSON">${icon('upload', 14)}<span>Importar</span></button>
           <button data-action="open-onboarding" title="Abrir tutorial">${icon('library', 14)}<span>Tutorial</span></button>
+          ${isStatsOwner() ? `<button data-action="open-stats" title="Ver estatisticas">${icon('bar-chart', 14)}<span>Stats</span></button>` : ''}
           <button class="sidebar-sync-btn" data-action="open-sync" title="${esc(syncTitle())}">${icon('upload', 14)}<span>${esc(syncLabel())}</span></button>
           <button class="tweaks-trigger" data-action="open-tweaks" title="Ajustes—paleta, ritmo, voz" aria-label="Abrir Tweaks">${icon('sliders', 14)}</button>
         </div>
@@ -2993,11 +3154,13 @@ function renderSearchOverlay() {
 function closeSyncPanel() {
   const root = $('#confirm-root');
   if (root) root.innerHTML = '';
+  state.showStats = false;
 }
 
 function renderSyncPanel() {
   const root = $('#confirm-root');
   if (!root) return;
+  state.showStats = false;
   const configured = syncState.configured;
   const userEmail = syncState.user?.email || '';
   root.innerHTML = `
@@ -3064,6 +3227,112 @@ function renderSyncPanel() {
     </div>
   `;
   setTimeout(() => $('#sync-email')?.focus(), 60);
+}
+
+function renderStatsPanel() {
+  const root = $('#confirm-root');
+  if (!root) return;
+  if (!state.showStats) {
+    if (root.querySelector('.stats-overlay')) root.innerHTML = '';
+    return;
+  }
+  const summary = summarizeAnalytics(analyticsState.events);
+  const row = (label, value) => `
+    <div class="stats-card">
+      <span>${esc(label)}</span>
+      <strong>${esc(value)}</strong>
+    </div>
+  `;
+  const list = (items, emptyLabel = 'Sem dados ainda') => items.length
+    ? items.map(([name, count], idx) => `
+      <div class="stats-list-row">
+        <span><b>${idx + 1}</b>${esc(statsActionLabel(name))}</span>
+        <strong>${count}</strong>
+      </div>
+    `).join('')
+    : `<p class="stats-empty">${esc(emptyLabel)}</p>`;
+  const lastLoaded = analyticsState.lastLoaded ? `Atualizado ${formatDate(analyticsState.lastLoaded)}` : 'Ultimos 30 dias';
+  root.innerHTML = `
+    <div class="overlay center stats-overlay" data-stats-overlay>
+      <div class="panel stats-panel" data-stop-prop role="dialog" aria-modal="true" aria-label="Painel estatistico">
+        <div class="modal-head">
+          <span class="modal-head-label">${icon('bar-chart', 15)} Estatisticas</span>
+          <button class="icon-btn" data-action="close-stats" title="Fechar">${icon('x', 17)}</button>
+        </div>
+        <div class="stats-body">
+          <div class="stats-hero">
+            <div>
+              <p class="stats-kicker">Painel privado</p>
+              <h2>Uso do BackToNotes</h2>
+              <span>${esc(lastLoaded)}</span>
+            </div>
+            <button class="stats-refresh" data-action="refresh-stats">${icon('refresh', 14)}<span>Atualizar</span></button>
+          </div>
+          ${analyticsState.error ? `<div class="sync-error">${esc(analyticsState.error)}</div>` : ''}
+          ${analyticsState.loading ? '<p class="stats-empty">Carregando estatisticas...</p>' : `
+            <div class="stats-grid">
+              ${row('Hoje', summary.visitors24h)}
+              ${row('7 dias', summary.visitors7d)}
+              ${row('30 dias', summary.visitors30d)}
+              ${row('Eventos', summary.totalEvents)}
+            </div>
+            <div class="stats-columns">
+              <section class="stats-section">
+                <h3>Funcoes mais usadas</h3>
+                ${list(summary.actions)}
+              </section>
+              <section class="stats-section">
+                <h3>Cards criados</h3>
+                ${list(summary.cards, 'Nenhum card criado no periodo')}
+              </section>
+              <section class="stats-section">
+                <h3>Dispositivos</h3>
+                ${list(summary.devices)}
+              </section>
+            </div>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function statsActionLabel(action) {
+  const labels = {
+    'new-item': 'Adicionar item',
+    'save-item': 'Salvar card',
+    'save-quick-add': 'Salvar colagem',
+    'view': 'Abrir card',
+    'open-search': 'Buscar',
+    'set-kind': 'Filtrar por tipo',
+    'set-col': 'Abrir pasta/colecao',
+    'add-col': 'Criar pasta',
+    'edit-col': 'Editar pasta',
+    'del-col': 'Deletar pasta',
+    'toggle-pin-item': 'Fixar card',
+    'toggle-pin-col': 'Fixar pasta',
+    'delete-item': 'Enviar para lixeira',
+    'restore-item': 'Restaurar item',
+    'delete-selected-trash': 'Apagar lixeira',
+    'export-library': 'Exportar biblioteca',
+    'import-library': 'Importar biblioteca',
+    'open-sync': 'Abrir login/sync',
+    'sync-login': 'Entrar',
+    'sync-signup': 'Criar conta',
+    'sync-google': 'Login Google',
+    'sync-now': 'Sincronizar',
+    'paste_text': 'Texto colado',
+    'paste_link': 'Link colado',
+    'paste_image': 'Imagem colada',
+    'upload_image': 'Upload de imagem',
+    'upload_file': 'Upload de arquivo',
+    'note': 'Nota',
+    'link': 'Link',
+    'post': 'Post',
+    'image': 'Imagem',
+    'file': 'Arquivo',
+  };
+  return labels[action] || action || 'Outro';
 }
 
 function renderOnboarding() {
@@ -3869,6 +4138,11 @@ document.addEventListener('paste', async (e) => {
   e.preventDefault();
   const draft = await draftFromClipboardData(e.clipboardData);
   if (!draft) return;
+  trackEvent('action', draft.type === 'image' ? 'paste_image' : draft.type === 'link' ? 'paste_link' : 'paste_text', {
+    type: draft.type,
+    has_image: !!draft.imageData,
+    has_url: !!draft.url,
+  });
   openQuickAdd(draft);
 });
 
@@ -4081,6 +4355,11 @@ document.addEventListener('click', (e) => {
     closeSyncPanel();
     return;
   }
+  const statsOverlay = e.target.closest('[data-stats-overlay]');
+  if (statsOverlay && !e.target.closest('[data-stop-prop]')) {
+    closeStatsPanel();
+    return;
+  }
 
   // Generic action dispatcher
   const actionEl = e.target.closest('[data-action]');
@@ -4088,6 +4367,11 @@ document.addEventListener('click', (e) => {
   const action = actionEl.dataset.action;
   const id = actionEl.dataset.id;
   e.stopPropagation();
+  const trackedItem = id ? state.items.find(i => i.id === id) : null;
+  trackEvent('action', action, {
+    item_type: trackedItem ? cardTypeKind(trackedItem) : '',
+    collection_id: action === 'set-col' || action === 'bulk-move' ? id : '',
+  });
 
   switch (action) {
     case 'set-col': setActiveCol(id); break;
@@ -4147,6 +4431,9 @@ document.addEventListener('click', (e) => {
     case 'open-onboarding': openOnboarding(); break;
     case 'open-sync': renderSyncPanel(); break;
     case 'close-sync': closeSyncPanel(); break;
+    case 'open-stats': loadAnalyticsPanel(); break;
+    case 'refresh-stats': loadAnalyticsPanel(); break;
+    case 'close-stats': closeStatsPanel(); break;
     case 'close-onboarding': closeOnboarding(); break;
     case 'sync-google': handleSyncGoogle(); break;
     case 'sync-login': handleSyncAuth('login'); break;
@@ -4175,6 +4462,7 @@ function handleEscapeClose(e) {
     state.viewing ||
     state.quickAdd ||
     state.newFolder ||
+    state.showStats ||
     state.showSearch ||
     state.showOnboarding ||
     state.showSidebar
@@ -4187,6 +4475,7 @@ function handleEscapeClose(e) {
   if (confirmRoot?.querySelector('.pdf-reader-overlay')) closePdfReader();
   else if (confirmRoot?.querySelector('.lightbox-overlay')) closeLightbox();
   else if (confirmRoot?.querySelector('.sync-overlay')) closeSyncPanel();
+  else if (state.showStats) closeStatsPanel();
   else if (state.editing) closeEditor();
   else if (state.viewing) closeViewer();
   else if (state.quickAdd) closeQuickAdd();
