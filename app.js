@@ -60,6 +60,7 @@ const CARD_TYPE_FILTERS = [
 ];
 
 const STORAGE_KEY = 'biblioteca:v1';
+const ONBOARDING_KEY = 'backtonotes:onboarding:v1';
 const SYNC_TABLE = 'backnotes_libraries';
 const FILE_DB_NAME = 'backtonotes-files';
 const FILE_DB_VERSION = 1;
@@ -760,6 +761,7 @@ let state = {
   selectedIds: [],
   showSearch: false,
   showSidebar: false,
+  showOnboarding: false,
   loading: true,
 };
 
@@ -881,6 +883,19 @@ function load() {
     (it.thumbUrl && it.thumbUrl.startsWith('data:')) ? { ...it, thumbUrl: null, thumbFailed: false } : it
   );
   state.loading = false;
+  state.showOnboarding = !localStorage.getItem(ONBOARDING_KEY);
+}
+
+function closeOnboarding() {
+  state.showOnboarding = false;
+  try { localStorage.setItem(ONBOARDING_KEY, 'seen'); } catch {}
+  renderOnboarding();
+}
+
+function openOnboarding() {
+  closeSyncPanel();
+  state.showOnboarding = true;
+  renderOnboarding();
 }
 
 function syncConfig() {
@@ -2123,6 +2138,7 @@ function renderApp() {
         <div class="sidebar-foot">
           <button data-action="export-library" title="Exportar tudo como JSON">${icon('download', 14)}<span>Exportar</span></button>
           <button data-action="import-library" title="Importar JSON">${icon('upload', 14)}<span>Importar</span></button>
+          <button data-action="open-onboarding" title="Abrir tutorial">${icon('library', 14)}<span>Tutorial</span></button>
           <button class="sidebar-sync-btn" data-action="open-sync" title="${esc(syncTitle())}">${icon('upload', 14)}<span>${esc(syncLabel())}</span></button>
           <button class="tweaks-trigger" data-action="open-tweaks" title="Ajustes—paleta, ritmo, voz" aria-label="Abrir Tweaks">${icon('sliders', 14)}</button>
         </div>
@@ -2988,6 +3004,62 @@ function renderSyncPanel() {
   setTimeout(() => $('#sync-email')?.focus(), 60);
 }
 
+function renderOnboarding() {
+  const root = $('#confirm-root');
+  if (!root) return;
+  if (!state.showOnboarding) {
+    if (root.querySelector('[data-onboarding-overlay]')) root.innerHTML = '';
+    return;
+  }
+  const overlayKind = isMobile() ? 'bottom-sheet' : 'center';
+  const steps = [
+    {
+      icon: 'plus',
+      title: 'Salve em segundos',
+      text: 'Cole um texto ou link, arraste arquivos, ou toque no botao de adicionar.',
+    },
+    {
+      icon: 'folder',
+      title: 'Organize por pastas',
+      text: 'Crie pastas para separar estudos, ideias, prints, PDFs e outros arquivos.',
+    },
+    {
+      icon: 'search',
+      title: 'Encontre rapido',
+      text: 'Use os filtros por tipo e a busca para voltar ao que voce guardou.',
+    },
+  ];
+  root.innerHTML = `
+    <div class="overlay ${overlayKind} onboarding-overlay" data-onboarding-overlay>
+      <div class="panel onboarding-panel" data-stop-prop role="dialog" aria-modal="true" aria-label="Boas-vindas ao BackToNotes">
+        ${isMobile() ? '<div class="sheet-grip"></div>' : ''}
+        <div class="onboarding-head">
+          <span class="onboarding-mark">${icon('library', 24)}</span>
+          <div>
+            <p class="onboarding-kicker">BackToNotes</p>
+            <h2>Comece sua biblioteca</h2>
+          </div>
+        </div>
+        <div class="onboarding-steps">
+          ${steps.map((step, index) => `
+            <div class="onboarding-step">
+              <span class="onboarding-step-icon">${icon(step.icon, 18)}</span>
+              <span class="onboarding-step-copy">
+                <strong>${index + 1}. ${esc(step.title)}</strong>
+                <small>${esc(step.text)}</small>
+              </span>
+            </div>
+          `).join('')}
+        </div>
+        <div class="onboarding-actions">
+          <button class="onboarding-skip" data-action="close-onboarding">Pular</button>
+          <button class="onboarding-start" data-action="close-onboarding">${icon('check-circle', 16)}<span>Comecar</span></button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 async function handleSyncGoogle() {
   if (!syncState.client) { renderSyncPanel(); return; }
   syncState.busy = true;
@@ -3076,6 +3148,7 @@ function renderAll() {
   renderApp();
   renderModal();
   renderSearchOverlay();
+  renderOnboarding();
 }
 
 
@@ -3936,6 +4009,11 @@ document.addEventListener('click', (e) => {
     if (state.showSearch) closeSearch();
     return;
   }
+  const onboardingOverlay = e.target.closest('[data-onboarding-overlay]');
+  if (onboardingOverlay && !e.target.closest('[data-stop-prop]')) {
+    closeOnboarding();
+    return;
+  }
   const syncOverlay = e.target.closest('[data-sync-overlay]');
   if (syncOverlay && !e.target.closest('[data-stop-prop]')) {
     closeSyncPanel();
@@ -4002,8 +4080,10 @@ document.addEventListener('click', (e) => {
     case 'cycle-sort': cycleSortMode(); break;
     case 'export-library': exportLibrary(); break;
     case 'import-library': importLibrary(); break;
+    case 'open-onboarding': openOnboarding(); break;
     case 'open-sync': renderSyncPanel(); break;
     case 'close-sync': closeSyncPanel(); break;
+    case 'close-onboarding': closeOnboarding(); break;
     case 'sync-google': handleSyncGoogle(); break;
     case 'sync-login': handleSyncAuth('login'); break;
     case 'sync-signup': handleSyncAuth('signup'); break;
@@ -4078,6 +4158,7 @@ document.addEventListener('keydown', (e) => {
     else if (state.quickAdd) closeQuickAdd();
     else if (state.newFolder) closeNewFolder();
     else if (state.showSearch) closeSearch();
+    else if (state.showOnboarding) closeOnboarding();
     else if (state.showSidebar) toggleSidebar(false);
   }
 });
