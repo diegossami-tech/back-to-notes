@@ -305,6 +305,12 @@ function formatDate(ts) {
   return new Date(ts).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
 }
 
+function estimatedReadTime(item) {
+  const words = String([item?.title, item?.content, item?.url].filter(Boolean).join(' ')).trim().split(/\s+/).filter(Boolean).length;
+  const minutes = Math.max(1, Math.ceil(words / 180));
+  return `${minutes} min`;
+}
+
 function syncDefaultCollections(collections) {
   const existing = Array.isArray(collections) ? collections : [];
   const byId = new Map(existing.map(c => [c.id, c]));
@@ -2903,6 +2909,7 @@ function renderCard(item, idx) {
   const isCenteredTextPreview = !hasTextStyle && item.previewStyle === 'centered-text' && item.type === 'note' && !!item.content;
   const contentStyleClass = hasTextStyle ? textStyleClass(item.textStyle) : '';
   const dateLabel = formatDate(item.updatedAt || item.createdAt);
+  const readTimeLabel = estimatedReadTime(item);
   const heroInfo = providerKey ? brandInfo(providerMeta) : null;
   const isSelected = selectedItemSet().has(item.id);
   const isPinned = !!item.pinnedAt;
@@ -2937,7 +2944,11 @@ function renderCard(item, idx) {
     : '';
   const foot = `
     <div class="card-foot">
-      <span class="card-date">${esc(dateLabel)}</span>
+      <span class="card-foot-left">
+        <span class="card-date">${icon('clock', 12)}<span>${esc(dateLabel)}</span></span>
+        <span class="card-foot-sep">•</span>
+      </span>
+      <span class="card-read-time">${esc(readTimeLabel)} de leitura</span>
       <button class="card-pin ${isPinned ? 'active' : ''}" data-action="toggle-pin-item" data-id="${esc(item.id)}" title="${isPinned ? 'Desafixar card' : 'Fixar card na tela inicial'}" aria-label="${isPinned ? 'Desafixar card' : 'Fixar card na tela inicial'}">${icon('pin', 13)}</button>
       <div class="tags">${tagsHtml}</div>
       ${studyHtml}
@@ -2949,9 +2960,14 @@ function renderCard(item, idx) {
     return `
       <article class="${cardClass}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="${draggableAttr}" style="animation-delay:${Math.min(idx * 25, 200)}ms">
         ${selectMark}
-        <img class="card-image" src="${esc(item.imageData)}" alt="" draggable="false">
+        <div class="card-image-wrap">
+          <img class="card-image" src="${esc(item.imageData)}" alt="" draggable="false">
+          <div class="card-image-overlay">
+            ${head}
+            ${titleHtml}
+          </div>
+        </div>
         <div class="card-body">
-          ${head}${titleHtml}
           ${contentHtml}
           ${bodyImagesHtml}
           ${foot}
