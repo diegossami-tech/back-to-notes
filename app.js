@@ -311,6 +311,14 @@ function estimatedReadTime(item) {
   return `${minutes} min`;
 }
 
+function cardFooterMeta(item) {
+  const kind = cardTypeKind(item);
+  if (kind === 'print') return 'imagem';
+  if (kind === 'link') return getDomain(item?.url) || 'link salvo';
+  if (kind === 'pdf' || kind === 'word' || kind === 'file') return formatBytes(item?.fileSize) || 'arquivo';
+  return `${estimatedReadTime(item)} de leitura`;
+}
+
 function syncDefaultCollections(collections) {
   const existing = Array.isArray(collections) ? collections : [];
   const byId = new Map(existing.map(c => [c.id, c]));
@@ -2909,7 +2917,7 @@ function renderCard(item, idx) {
   const isCenteredTextPreview = !hasTextStyle && item.previewStyle === 'centered-text' && item.type === 'note' && !!item.content;
   const contentStyleClass = hasTextStyle ? textStyleClass(item.textStyle) : '';
   const dateLabel = formatDate(item.updatedAt || item.createdAt);
-  const readTimeLabel = estimatedReadTime(item);
+  const metaLabel = cardFooterMeta(item);
   const heroInfo = providerKey ? brandInfo(providerMeta) : null;
   const isSelected = selectedItemSet().has(item.id);
   const isPinned = !!item.pinnedAt;
@@ -2948,7 +2956,7 @@ function renderCard(item, idx) {
         <span class="card-date">${icon('clock', 12)}<span>${esc(dateLabel)}</span></span>
         <span class="card-foot-sep">•</span>
       </span>
-      <span class="card-read-time">${esc(readTimeLabel)} de leitura</span>
+      <span class="card-read-time">${esc(metaLabel)}</span>
       <button class="card-pin ${isPinned ? 'active' : ''}" data-action="toggle-pin-item" data-id="${esc(item.id)}" title="${isPinned ? 'Desafixar card' : 'Fixar card na tela inicial'}" aria-label="${isPinned ? 'Desafixar card' : 'Fixar card na tela inicial'}">${icon('pin', 13)}</button>
       <div class="tags">${tagsHtml}</div>
       ${studyHtml}
