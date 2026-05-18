@@ -2965,17 +2965,17 @@ function renderCard(item, idx) {
     </div>
   `;
 
-  // Image variant: image on top, body below
+  // Image variant: title first, then media preview and text.
   if (variant === 'image' && item.imageData) {
     return `
       <article class="${cardClass}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="${draggableAttr}" style="animation-delay:${Math.min(idx * 25, 200)}ms">
         ${selectMark}
-        <div class="card-image-wrap">
-          <img class="card-image" src="${esc(item.imageData)}" alt="" draggable="false">
-        </div>
         <div class="card-body">
           ${head}
           ${titleHtml}
+          <div class="card-image-wrap">
+            <img class="card-image" src="${esc(item.imageData)}" alt="" draggable="false">
+          </div>
           ${contentHtml}
           ${bodyImagesHtml}
           ${foot}

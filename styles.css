@@ -4193,11 +4193,12 @@ html[data-palette="lousa"] .sidebar-trash:hover { background: rgba(237,229,208,0
 }
 .card-image-wrap {
   position: relative;
-  height: 160px;
+  height: clamp(118px, 32vw, 148px);
   overflow: hidden;
-  border-radius: 16px 16px 0 0;
+  border-radius: 12px;
+  margin: 8px 0 10px;
   background: #f7f7fb;
-  border-bottom: 1px solid #f0f0f0;
+  border: 1px solid #f0f0f0;
 }
 .card.variant-image .card-image {
   width: 100%;
@@ -4214,6 +4215,15 @@ html[data-palette="lousa"] .sidebar-trash:hover { background: rgba(237,229,208,0
 }
 .card.variant-image .card-body {
   padding: 14px 14px 12px;
+}
+.card.variant-image .card-content {
+  -webkit-line-clamp: 3;
+}
+.grid {
+  align-items: start;
+}
+.card {
+  align-self: start;
 }
 
 .link-preview {
