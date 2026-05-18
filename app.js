@@ -22,6 +22,7 @@ const ITEM_TYPES = [
 ];
 
 const SORT_OPTIONS = [
+  { id: 'manual', label: 'manual' },
   { id: 'recent', label: 'recentes' },
   { id: 'oldest', label: 'mais antigos' },
   { id: 'alpha',  label: 'alfabético' },
@@ -1516,6 +1517,42 @@ function moveItemToCollection(itemId, collectionId, opts = {}) {
   }
 }
 
+function canReorderCards(srcId, destId) {
+  if (!srcId || !destId || srcId === destId || state.selectMode) return false;
+  const src = state.items.find(i => i.id === srcId);
+  const dest = state.items.find(i => i.id === destId);
+  if (!src || !dest || src.deletedAt || dest.deletedAt) return false;
+  return (src.collection || '') === (dest.collection || '');
+}
+
+function manualOrderValue(item) {
+  return Number.isFinite(Number(item.manualOrder))
+    ? Number(item.manualOrder)
+    : Number.MAX_SAFE_INTEGER - Number(item.createdAt || item.updatedAt || 0);
+}
+
+function reorderCardInCurrentView(srcId, destId, position) {
+  if (!canReorderCards(srcId, destId)) return false;
+  const visible = filteredItems();
+  const srcItem = visible.find(item => item.id === srcId);
+  const destItem = visible.find(item => item.id === destId);
+  if (!srcItem || !destItem) return false;
+  const ordered = visible.filter(item => item.id !== srcId);
+  let destIndex = ordered.findIndex(item => item.id === destId);
+  if (destIndex < 0) return false;
+  if (position === 'below') destIndex += 1;
+  ordered.splice(destIndex, 0, srcItem);
+  const now = Date.now();
+  const manualById = new Map(ordered.map((item, index) => [item.id, index + 1]));
+  state.items = state.items.map(item =>
+    manualById.has(item.id) ? { ...item, manualOrder: manualById.get(item.id), updatedAt: now } : item
+  );
+  state.sortMode = 'manual';
+  persist();
+  renderApp();
+  return true;
+}
+
 function selectedItemSet() {
   return new Set(state.selectedIds || []);
 }
@@ -1850,6 +1887,7 @@ function filteredItems() {
     );
   });
   const sorters = {
+    manual: (a, b) => manualOrderValue(a) - manualOrderValue(b),
     recent: (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0),
     oldest: (a, b) => (a.updatedAt || 0) - (b.updatedAt || 0),
     alpha:  (a, b) => (a.title || '').localeCompare(b.title || '', 'pt-BR'),
@@ -3548,10 +3586,12 @@ function renderAll() {
 // Two parallel implementations sharing UI state:
 //   - HTML5 native drag-and-drop for mouse / desktop
 //   - Long-press pointer drag for touch
-// Both end in moveItemToCollection(itemId, collectionId).
+// Drops either reorder cards in-place or move them to a folder.
 
 let draggingItemId = null;
 let currentDropTarget = null;
+let cardDropTarget = null;
+let cardDropPosition = null;
 let longPress = null;       // { card, itemId, startX, startY, timer, active }
 let stickyMobileDrag = null; // { card, itemId } after long-press selection
 let suppressNextDragClick = false;
@@ -3569,6 +3609,23 @@ function setDropTarget(el) {
 function clearDropTarget() { setDropTarget(null); }
 function setDraggingMode(active) { document.body.classList.toggle('dragging-item', active); }
 
+function setCardDropTarget(card, position) {
+  if (cardDropTarget && cardDropTarget !== card) {
+    cardDropTarget.classList.remove('card-drop-above', 'card-drop-below');
+  }
+  cardDropTarget = card;
+  cardDropPosition = card ? position : null;
+  if (!card) return;
+  card.classList.toggle('card-drop-above', position === 'above');
+  card.classList.toggle('card-drop-below', position === 'below');
+}
+
+function clearCardDropTarget() {
+  cardDropTarget?.classList.remove('card-drop-above', 'card-drop-below');
+  cardDropTarget = null;
+  cardDropPosition = null;
+}
+
 function releasePointerCaptureSafe(card, pointerId) {
   if (!card || pointerId == null) return;
   try {
@@ -3583,6 +3640,7 @@ function clearMobileDragSelection() {
   draggingItemId = null;
   endDragGhost();
   clearDropTarget();
+  clearCardDropTarget();
   setDraggingMode(false);
 }
 
@@ -3640,6 +3698,17 @@ function findDropCollectionAt(x, y) {
     const d = Math.abs(y - (r.top + r.height / 2));
     return (!best || d < best.d) ? { t, d } : best;
   }, null).t;
+}
+
+function findCardDropAt(x, y) {
+  const el = document.elementFromPoint(x, y);
+  const card = el?.closest?.('.card[data-card-id]');
+  if (!card || !draggingItemId || card.dataset.cardId === draggingItemId) return null;
+  if (!canReorderCards(draggingItemId, card.dataset.cardId)) return null;
+  const r = card.getBoundingClientRect();
+  const vertical = r.height >= r.width;
+  const delta = vertical ? (y - r.top) / Math.max(r.height, 1) : (x - r.left) / Math.max(r.width, 1);
+  return { card, position: delta < 0.5 ? 'above' : 'below' };
 }
 
 // === HTML5 native drag (desktop) — items + folder reorder ===
@@ -3717,6 +3786,7 @@ document.addEventListener('dragend', () => {
   draggingItemId = null;
   $$('.card.dragging').forEach(c => c.classList.remove('dragging'));
   clearDropTarget();
+  clearCardDropTarget();
   setDraggingMode(false);
 });
 
@@ -3738,6 +3808,13 @@ document.addEventListener('dragover', (e) => {
   if (draggingItemId === null) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
+  const cardTarget = findCardDropAt(e.clientX, e.clientY);
+  if (cardTarget) {
+    setCardDropTarget(cardTarget.card, cardTarget.position);
+    clearDropTarget();
+    return;
+  }
+  clearCardDropTarget();
   setDropTarget(findDropCollectionAt(e.clientX, e.clientY) || null);
 });
 
@@ -3757,11 +3834,17 @@ document.addEventListener('drop', (e) => {
   }
   if (draggingItemId === null) return;
   e.preventDefault();
-  const target = findDropCollectionAt(e.clientX, e.clientY);
-  const colId = target?.dataset.dropCol;
-  if (colId && colId !== 'all') moveItemToCollection(draggingItemId, colId);
+  const cardTarget = findCardDropAt(e.clientX, e.clientY);
+  if (cardTarget) {
+    reorderCardInCurrentView(draggingItemId, cardTarget.card.dataset.cardId, cardTarget.position);
+  } else {
+    const target = findDropCollectionAt(e.clientX, e.clientY);
+    const colId = target?.dataset.dropCol;
+    if (colId && colId !== 'all') moveItemToCollection(draggingItemId, colId);
+  }
   draggingItemId = null;
   clearDropTarget();
+  clearCardDropTarget();
   setDraggingMode(false);
 });
 
@@ -3810,6 +3893,13 @@ document.addEventListener('pointermove', (e) => {
   // Active drag
   e.preventDefault();
   positionGhost(e.clientX, e.clientY);
+  const cardTarget = findCardDropAt(e.clientX, e.clientY);
+  if (cardTarget) {
+    setCardDropTarget(cardTarget.card, cardTarget.position);
+    clearDropTarget();
+    return;
+  }
+  clearCardDropTarget();
   setDropTarget(findDropCollectionAt(e.clientX, e.clientY) || null);
 });
 
@@ -3826,9 +3916,20 @@ document.addEventListener('pointerup', (e) => {
   if (!wasActive) return; // it was just a tap — let click handle it
 
   endDragGhost();
+  const cardTarget = findCardDropAt(e.clientX, e.clientY);
+  if (cardTarget) {
+    card.classList.remove('dragging');
+    setDraggingMode(false);
+    draggingItemId = null;
+    clearDropTarget();
+    clearCardDropTarget();
+    reorderCardInCurrentView(itemId, cardTarget.card.dataset.cardId, cardTarget.position);
+    return;
+  }
   const target = findDropCollectionAt(e.clientX, e.clientY);
   const colId = target?.dataset.dropCol;
   clearDropTarget();
+  clearCardDropTarget();
   if (isUserCollectionId(colId)) {
     card.classList.remove('dragging');
     setDraggingMode(false);
@@ -3850,6 +3951,7 @@ document.addEventListener('pointercancel', () => {
   if (active) {
     endDragGhost();
     clearDropTarget();
+    clearCardDropTarget();
     suppressNextDragClick = false;
     keepMobileDragSelection(card, itemId);
     return;
@@ -3857,6 +3959,7 @@ document.addEventListener('pointercancel', () => {
   card?.classList.remove('dragging');
   endDragGhost();
   clearDropTarget();
+  clearCardDropTarget();
   setDraggingMode(false);
   draggingItemId = null;
 });

@@ -953,6 +953,25 @@ body.dragging-item .folder-empty { opacity: 0.7; }
   transform: scale(0.97);
   box-shadow: 0 8px 24px -16px rgba(28,24,20,0.35);
 }
+.card.card-drop-above,
+.card.card-drop-below {
+  box-shadow: 0 14px 30px -22px rgba(28,24,20,0.4), 0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+.card.card-drop-above::before,
+.card.card-drop-below::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+  z-index: 6;
+  pointer-events: none;
+}
+.card.card-drop-above::before { top: -7px; }
+.card.card-drop-below::after { bottom: -7px; }
 
 .card-top {
   display: flex; align-items: center; justify-content: space-between;
