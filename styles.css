@@ -4418,3 +4418,54 @@ body.dragging-item .card:not(.dragging):hover {
     gap: 18px;
   }
 }
+
+@media (min-width: 1440px) {
+  .grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .card,
+  html[data-palette] .card,
+  .card.variant-image,
+  .card.variant-pdf,
+  .card.variant-video {
+    padding: 14px;
+  }
+
+  .card-title {
+    font-size: 15.5px;
+    line-height: 1.25;
+    margin-bottom: 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .card-title::after {
+    margin: 9px 0;
+  }
+
+  .card-content {
+    font-size: 12.5px;
+    line-height: 1.5;
+    -webkit-line-clamp: 3;
+  }
+
+  .card-image,
+  .card.variant-image .card-image,
+  .card-image-wrap {
+    height: 116px;
+  }
+
+  .card-foot {
+    font-size: 11px;
+    padding-top: 9px;
+  }
+
+  .card-type {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+}
