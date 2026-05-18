@@ -3265,10 +3265,10 @@ function renderNewItemComposer(root, d, focusedId, focusedSel, overlayKind) {
         </div>
 
         <div class="modal-body composer-body">
-          <input type="hidden" id="f-title" value="${esc(d.title)}">
           <input type="hidden" id="f-url" value="${esc(d.url)}">
           <input class="file-input" id="f-file" type="file" multiple>
 
+          <input class="composer-title-input" id="f-title" value="${esc(d.title)}" placeholder="Título opcional">
           <textarea class="composer-textarea textarea note-textarea ${textStyleClass(normalizeTextStyle(d.textStyle))}" id="f-content" rows="7" placeholder="Cole um texto, link ou escreva uma nota...">${esc(d.content)}</textarea>
 
           <div id="composer-link-preview-wrap">${renderComposerLinkPreview(d)}</div>
@@ -3514,6 +3514,7 @@ function refreshNewFolderUI() {
 }
 
 function renderQuickAddPreviewContent(d) {
+  const bodyImages = itemBodyImages(d);
   if (d.imageData) {
     const isCropped = !!(d.originalImageData && d.imageData !== d.originalImageData);
     return `
@@ -3536,7 +3537,27 @@ function renderQuickAddPreviewContent(d) {
   }
   if (d.fileStorageId) return renderStoredFilePreview(d);
   if (d.url) return renderLinkPreview(d.url, 'view-link-preview', d.thumbUrl);
-  return `<p class="paste-preview-text">${esc(pastePreviewText(d.content))}</p>`;
+  return renderQuickTextPreview(d);
+}
+
+function renderQuickTextPreview(d) {
+  const bodyImages = itemBodyImages(d);
+  return `
+    <p class="paste-preview-text">${esc(pastePreviewText(d.content))}</p>
+    <div class="quick-body-image-panel">
+      <input class="body-image-input" id="quick-body-image" type="file" accept="image/*" multiple>
+      <div class="quick-body-image-actions">
+        <label class="body-image-upload-btn" for="quick-body-image">
+          ${icon('image', 15)}
+          <span>Adicionar imagem</span>
+        </label>
+        <span class="body-image-hint">Cole ou arraste uma imagem sobre este preview.</span>
+      </div>
+      <div class="note-body-image-zone quick-body-image-zone" data-quick-body-image-drop>
+        ${bodyImages.length ? renderEditorBodyImages(bodyImages) : `<div class="note-body-image-empty">${icon('image', 16)}<span>Solte uma imagem aqui.</span></div>`}
+      </div>
+    </div>
+  `;
 }
 
 function refreshQuickAddPreviewUI() {
@@ -3544,6 +3565,49 @@ function refreshQuickAddPreviewUI() {
   setQuickTitleFromDom();
   const preview = document.querySelector('.paste-preview');
   if (preview) preview.innerHTML = renderQuickAddPreviewContent(state.quickAdd);
+}
+
+function isQuickAddBodyImageDropTarget(target) {
+  return !!(state.quickAdd?.type === 'note' && target?.closest?.('[data-quick-preview], [data-quick-body-image-drop]'));
+}
+
+async function addBodyImagesToQuickAdd(files, sourceLabel = 'Imagem adicionada ao preview') {
+  const imageFiles = Array.from(files || []).filter(isImageFileLike);
+  if (!imageFiles.length || !state.quickAdd) return false;
+  try {
+    setQuickTitleFromDom();
+    const current = itemBodyImages(state.quickAdd);
+    const added = [];
+    for (const file of imageFiles) {
+      const raw = await fileToDataUrl(file);
+      const dataUrl = await compressImageDataUrl(raw, 2400);
+      added.push({
+        id: 'bodyimg_' + uid(),
+        dataUrl,
+        name: file.name || 'imagem',
+        type: file.type || 'image/png',
+        size: file.size || 0,
+        createdAt: Date.now(),
+      });
+    }
+    state.quickAdd.bodyImages = [...current, ...added];
+    state.quickAdd.type = 'note';
+    refreshQuickAddPreviewUI();
+    showToast(sourceLabel);
+    trackEvent('action', 'quick_body_image_add', { count: added.length });
+    return true;
+  } catch (err) {
+    console.error(err);
+    showToast('Nao foi possivel adicionar a imagem ao preview');
+    return false;
+  }
+}
+
+function removeBodyImageFromQuickAdd(id) {
+  if (!state.quickAdd || !id) return;
+  setQuickTitleFromDom();
+  state.quickAdd.bodyImages = itemBodyImages(state.quickAdd).filter(img => img.id !== id);
+  refreshQuickAddPreviewUI();
 }
 
 function renderQuickAdd(root) {
@@ -3581,7 +3645,7 @@ function renderQuickAdd(root) {
 
           <div>
             <label class="field-label">Prévia</label>
-            <div class="paste-preview">
+            <div class="paste-preview" data-quick-preview ${d.type === 'note' ? 'data-quick-body-image-drop' : ''}>
               ${d.imageData
                 ? `
                   <div class="crop-tools ${d.originalImageData && d.imageData !== d.originalImageData ? 'is-cropped' : ''}">
@@ -3612,7 +3676,7 @@ function renderQuickAdd(root) {
                   `
                 : d.url
                   ? renderLinkPreview(d.url, 'view-link-preview', d.thumbUrl)
-                  : `<p class="paste-preview-text">${esc(pastePreviewText(d.content))}</p>`}
+                  : `${renderQuickTextPreview(d)}`}
             </div>
           </div>
         </div>
@@ -4381,6 +4445,10 @@ document.addEventListener('dragenter', (e) => {
     document.querySelector('[data-body-image-drop]')?.classList.add('is-dragging');
     return;
   }
+  if (isQuickAddBodyImageDropTarget(e.target)) {
+    document.querySelector('[data-quick-body-image-drop]')?.classList.add('is-dragging');
+    return;
+  }
   extDragCounter++;
   document.body.classList.add('ext-dragging');
 });
@@ -4388,6 +4456,10 @@ document.addEventListener('dragleave', (e) => {
   if (draggingItemId !== null) return;
   if (isBodyImageDropTarget(e.target)) {
     document.querySelector('[data-body-image-drop]')?.classList.remove('is-dragging');
+    return;
+  }
+  if (isQuickAddBodyImageDropTarget(e.target)) {
+    document.querySelector('[data-quick-body-image-drop]')?.classList.remove('is-dragging');
     return;
   }
   extDragCounter = Math.max(0, extDragCounter - 1);
@@ -4400,8 +4472,13 @@ window.addEventListener('drop', async (e) => {
   extDragCounter = 0;
   document.body.classList.remove('ext-dragging');
   document.querySelector('[data-body-image-drop]')?.classList.remove('is-dragging');
+  document.querySelector('[data-quick-body-image-drop]')?.classList.remove('is-dragging');
 
   const dt = e.dataTransfer;
+  if (state.quickAdd && dt.files?.length) {
+    if (isQuickAddBodyImageDropTarget(e.target)) await addBodyImagesToQuickAdd(dt.files, 'Imagem adicionada ao preview');
+    return;
+  }
   if (state.editing && dt.files?.length) {
     if (isBodyImageDropTarget(e.target)) await addBodyImagesToEditingItem(dt.files, 'Imagem adicionada ao texto');
     else if (isComposerOpen()) await handleComposerAttachmentUpload(dt.files);
@@ -4466,6 +4543,8 @@ document.addEventListener('dragover', (e) => {
   e.preventDefault();
   const zone = document.querySelector('[data-body-image-drop]');
   if (zone) zone.classList.toggle('is-dragging', isBodyImageDropTarget(e.target));
+  const quickZone = document.querySelector('[data-quick-body-image-drop]');
+  if (quickZone) quickZone.classList.toggle('is-dragging', isQuickAddBodyImageDropTarget(e.target));
 });
 
 // ============ IMAGE / CROP HELPERS ============
@@ -4745,6 +4824,13 @@ document.addEventListener('paste', async (e) => {
   }
   if (state.editing && modalDraft?.isNew && e.target.id === 'f-content') {
     setTimeout(() => applyComposerAutoLink($('#f-content')?.value || ''), 0);
+    return;
+  }
+  if (state.quickAdd?.type === 'note' && imageItem && isQuickAddBodyImageDropTarget(e.target)) {
+    const file = imageItem.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    await addBodyImagesToQuickAdd([file], 'Imagem adicionada ao preview');
     return;
   }
   if (state.editing || state.viewing || state.quickAdd || state.showSearch) return;
@@ -5096,7 +5182,7 @@ document.addEventListener('click', (e) => {
     case 'apply-crop': applyImageCrop(); break;
     case 'clear-crop': clearImageCrop(); break;
     case 'clear-editor-image': clearEditorImage(); break;
-    case 'remove-body-image': removeBodyImageFromEditor(id); break;
+    case 'remove-body-image': state.quickAdd ? removeBodyImageFromQuickAdd(id) : removeBodyImageFromEditor(id); break;
     case 'clear-editor-file': clearEditorFile(); break;
     case 'composer-paste-link': pasteLinkIntoComposer(); break;
     case 'composer-clear-link': clearComposerLink(); break;
@@ -5286,6 +5372,10 @@ document.addEventListener('change', async (e) => {
   }
   if (e.target.id === 'f-body-image') {
     await addBodyImagesToEditingItem(e.target.files, 'Imagem adicionada ao texto');
+    e.target.value = '';
+  }
+  if (e.target.id === 'quick-body-image') {
+    await addBodyImagesToQuickAdd(e.target.files, 'Imagem adicionada ao preview');
     e.target.value = '';
   }
 });
