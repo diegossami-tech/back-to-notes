@@ -70,12 +70,19 @@ const TRASH_FOLDER_PREFIX = 'trash-folder:';
 
 const STORAGE_KEY = 'biblioteca:v1';
 const ONBOARDING_KEY = 'backtonotes:onboarding:v1';
+const DENSITY_KEY = 'backtonotes:card-density:v1';
 const SYNC_TABLE = 'backnotes_libraries';
 const ANALYTICS_TABLE = 'backnotes_analytics_events';
 const ANALYTICS_SESSION_KEY = 'backtonotes:analytics-session:v1';
 const FILE_DB_NAME = 'backtonotes-files';
 const FILE_DB_VERSION = 1;
 const FILE_STORE = 'files';
+
+const DENSITY_OPTIONS = [
+  { id: 'confortavel', label: 'Confortavel', icon: 'inbox' },
+  { id: 'compacto', label: 'Compacto', icon: 'sort' },
+  { id: 'mural', label: 'Mural', icon: 'image' },
+];
 
 // ============ HELPERS ============
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -319,6 +326,45 @@ function cardFooterMeta(item) {
   return `${estimatedReadTime(item)} de leitura`;
 }
 
+function cardKindLabel(kind) {
+  const labels = {
+    text: 'texto',
+    print: 'imagem',
+    link: 'link',
+    post: 'post salvo',
+    pdf: 'pdf',
+    word: 'word',
+    file: 'arquivo',
+    document: 'documento',
+    folder: 'pasta',
+  };
+  return labels[kind] || kind || 'card';
+}
+
+function cardKindLabelForItem(item) {
+  return cardKindLabel(cardTypeKind(item));
+}
+
+function currentDensity() {
+  const attr = document.documentElement.getAttribute('data-ritmo');
+  const saved = (() => {
+    try { return localStorage.getItem(DENSITY_KEY); } catch { return null; }
+  })();
+  const candidate = saved || attr || 'confortavel';
+  return DENSITY_OPTIONS.some(option => option.id === candidate) ? candidate : 'confortavel';
+}
+
+function applyDensity(value) {
+  const next = DENSITY_OPTIONS.some(option => option.id === value) ? value : 'confortavel';
+  document.documentElement.setAttribute('data-ritmo', next);
+  try { localStorage.setItem(DENSITY_KEY, next); } catch {}
+}
+
+function setDensity(value) {
+  applyDensity(value);
+  renderApp();
+}
+
 function syncDefaultCollections(collections) {
   const existing = Array.isArray(collections) ? collections : [];
   const byId = new Map(existing.map(c => [c.id, c]));
@@ -480,7 +526,7 @@ function brandGlyph(name, size = 24) {
 }
 
 // ============ LINK PREVIEW (provider-aware) ============
-function renderLinkPreview(url, extraClass='', thumbUrl=null) {
+function renderLinkPreview(url, extraClass='', thumbUrl=null, title='') {
   const domain = getDomain(url);
   if (!domain) return '';
 
@@ -539,6 +585,21 @@ function renderLinkPreview(url, extraClass='', thumbUrl=null) {
         </span>
         <span class="link-preview-text">
           <span class="link-preview-domain" style="color:${info.accent}">${esc(domain)}</span>
+          <span class="link-preview-url">${esc(shortUrl(url))}</span>
+        </span>
+      </a>`;
+  }
+
+  // Fallback: favicon-only link preview.
+  if (thumbUrl || title) {
+    return `
+      <a class="link-preview link-preview-rich ${extraClass}" href="${esc(url)}" target="_blank" rel="noopener" data-stop draggable="false">
+        ${thumbUrl
+          ? `<span class="link-preview-thumb"><img src="${esc(thumbUrl)}" alt="" draggable="false" referrerpolicy="no-referrer"></span>`
+          : `<img class="link-favicon" src="${esc(faviconUrl(url))}" alt="" draggable="false">`}
+        <span class="link-preview-text">
+          ${title ? `<span class="link-preview-title">${esc(title)}</span>` : ''}
+          <span class="link-preview-domain">${esc(domain)}</span>
           <span class="link-preview-url">${esc(shortUrl(url))}</span>
         </span>
       </a>`;
@@ -751,6 +812,22 @@ async function fetchProviderMetadata(url) {
       };
     }
   }
+  const og = await fetchOgImage(url);
+  if (og?.thumb || og?.title) {
+    return {
+      title: oe?.title || og.title,
+      thumb: og.thumb,
+      author: oe?.author || og.author || null,
+    };
+  }
+  const ml = await fetchMicrolinkMeta(url);
+  if (ml?.thumb || ml?.title) {
+    return {
+      title: oe?.title || ml.title,
+      thumb: ml.thumb,
+      author: oe?.author || ml.author || null,
+    };
+  }
   return oe;
 }
 
@@ -783,7 +860,7 @@ function scheduleOEmbedFill(url) {
   const currentSeq = ++oembedTitleSeq;
   oembedTitleTimer = setTimeout(async () => {
     const normalized = normalizeUrl(url);
-    if (!normalized || !detectProvider(normalized)) return;
+    if (!normalized) return;
     const meta = await fetchProviderMetadata(normalized);
     if (!meta || currentSeq !== oembedTitleSeq) return;
     const urlEl = $('#f-url');
@@ -795,6 +872,8 @@ function scheduleOEmbedFill(url) {
       if (modalDraft) modalDraft.title = meta.title;
     }
     if (modalDraft && meta.thumb) modalDraft.thumbUrl = meta.thumb;
+    if (modalDraft && meta.title) modalDraft.linkTitle = meta.title;
+    if (modalDraft && meta.author) modalDraft.author = meta.author;
   }, 350);
 }
 
@@ -1032,6 +1111,7 @@ function load() {
   );
   state.loading = false;
   state.showOnboarding = !localStorage.getItem(ONBOARDING_KEY);
+  applyDensity(currentDensity());
 }
 
 function closeOnboarding() {
@@ -1413,15 +1493,20 @@ async function enrichItemAsync(itemId) {
   if (enrichInFlight.has(itemId)) return;
   const it = state.items.find(i => i.id === itemId);
   if (!it || !it.url || it.thumbUrl || it.thumbFailed) return;
-  if (!detectProvider(it.url)) return;
   enrichInFlight.add(itemId);
   try {
     const meta = await fetchProviderMetadata(it.url);
     const after = state.items.find(i => i.id === itemId);
     if (!after) return;
-    if (meta?.thumb) {
+    if (meta?.thumb || meta?.title || meta?.author) {
       state.items = state.items.map(i =>
-        i.id === itemId ? { ...i, thumbUrl: meta.thumb, ...(i.title ? {} : { title: meta.title || i.title }) } : i
+        i.id === itemId ? {
+          ...i,
+          thumbUrl: meta.thumb || i.thumbUrl,
+          linkTitle: meta.title || i.linkTitle,
+          author: meta.author || i.author,
+          ...(i.title ? {} : { title: meta.title || i.title }),
+        } : i
       );
       persist();
       renderApp();
@@ -1438,7 +1523,7 @@ async function enrichItemAsync(itemId) {
 // Called on boot — walks existing items and backfills any thumbs we can.
 // Throttled to a small concurrency so a big library doesn't slam the network.
 async function enrichLibrary() {
-  const pending = state.items.filter(i => i.url && !i.thumbUrl && !i.thumbFailed && detectProvider(i.url));
+  const pending = state.items.filter(i => i.url && !i.thumbUrl && !i.thumbFailed);
   if (!pending.length) return;
   const CONCURRENCY = 3;
   let cursor = 0;
@@ -2049,12 +2134,7 @@ function filteredItems() {
     if (!itemMatchesKind(it, state.activeKind)) return false;
     if (state.activeTag && !(it.tags || []).includes(state.activeTag)) return false;
     if (!q) return true;
-    return (
-      (it.title || '').toLowerCase().includes(q) ||
-      (it.content || '').toLowerCase().includes(q) ||
-      (it.url || '').toLowerCase().includes(q) ||
-      (it.tags || []).some(t => t.toLowerCase().includes(q))
-    );
+    return itemMatchesSearch(it, q);
   });
   const sorters = {
     manual: (a, b) => manualOrderValue(a) - manualOrderValue(b),
@@ -2125,6 +2205,38 @@ function globalTypeCounts() {
   return counts;
 }
 
+function collectionNameForItem(item) {
+  return state.collections.find(c => c.id === item?.collection)?.name || '';
+}
+
+function searchableTextForItem(item) {
+  const kind = cardTypeKind(item);
+  const domain = item?.url ? getDomain(item.url) : '';
+  const bodyImageNames = itemBodyImages(item).map(img => img.name).join(' ');
+  return [
+    item?.title,
+    item?.linkTitle,
+    item?.content,
+    item?.url,
+    domain,
+    item?.fileName,
+    item?.fileType,
+    item?.author,
+    collectionNameForItem(item),
+    cardKindLabel(kind),
+    kind,
+    bodyImageNames,
+    ...(item?.tags || []),
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function itemMatchesSearch(item, query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return true;
+  const haystack = searchableTextForItem(item);
+  return q.split(/\s+/).filter(Boolean).every(token => haystack.includes(token));
+}
+
 function statsLine() {
   const now = Date.now();
   const week = 7 * 86400000;
@@ -2141,12 +2253,9 @@ function statsLine() {
 function globalSearchResults() {
   const q = state.search.trim().toLowerCase();
   if (!q) return [];
-  return state.items.filter(it =>
-    (it.title || '').toLowerCase().includes(q) ||
-    (it.content || '').toLowerCase().includes(q) ||
-    (it.url || '').toLowerCase().includes(q) ||
-    (it.tags || []).some(t => t.toLowerCase().includes(q))
-  ).slice(0, 12);
+  return state.items
+    .filter(it => !it.deletedAt && itemMatchesSearch(it, q))
+    .slice(0, 16);
 }
 
 function defaultQuickTitle(draft) {
@@ -2600,6 +2709,94 @@ function renderBulkMoveBar(folders, selectedCount) {
   `;
 }
 
+function renderDensityControls() {
+  const active = currentDensity();
+  return `
+    <div class="density-switch" role="group" aria-label="Densidade dos cards">
+      ${DENSITY_OPTIONS.map(option => `
+        <button class="${active === option.id ? 'active' : ''}" data-action="set-density" data-density="${esc(option.id)}" title="${esc(option.label)}">
+          ${icon(option.icon, 12)}<span>${esc(option.label)}</span>
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderHomeDashboard(items) {
+  const live = state.items.filter(item => !item.deletedAt);
+  const pinned = live
+    .filter(item => item.pinnedAt)
+    .sort((a, b) => (b.pinnedAt || 0) - (a.pinnedAt || 0))
+    .slice(0, 4);
+  const recent = live
+    .slice()
+    .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))
+    .slice(0, 4);
+  const documents = live.filter(item => DOCUMENT_KINDS.has(cardTypeKind(item))).length;
+  const links = live.filter(item => cardTypeKind(item) === 'link').length;
+  const images = live.filter(item => cardTypeKind(item) === 'print').length;
+  const miniList = (rows, empty) => rows.length
+    ? rows.map(item => `
+      <button class="home-mini-item" data-action="view" data-id="${esc(item.id)}">
+        <span>${icon(ITEM_TYPES.find(type => type.id === item.type)?.icon || 'file-text', 13)}</span>
+        <strong>${esc(item.title || 'Sem titulo')}</strong>
+      </button>
+    `).join('')
+    : `<span class="home-mini-empty">${esc(empty)}</span>`;
+
+  return `
+    <section class="home-dashboard" aria-label="Resumo da biblioteca">
+      <div class="home-hero-card">
+        <span class="home-kicker">Sua biblioteca</span>
+        <strong>${live.length}</strong>
+        <p>${live.length === 1 ? 'card salvo' : 'cards salvos'} · ${images} imagens · ${links} links · ${documents} documentos</p>
+        <div class="home-hero-actions">
+          <button data-action="new-item">${icon('plus', 13)}<span>Novo</span></button>
+          <button data-action="open-search">${icon('search', 13)}<span>Buscar</span></button>
+        </div>
+      </div>
+      <div class="home-panel">
+        <div class="home-panel-head">
+          <span>${icon('pin', 13)} Fixados</span>
+          <button data-action="set-kind" data-kind="all" data-root="all">Tudo</button>
+        </div>
+        <div class="home-mini-list">${miniList(pinned, 'Fixe cards importantes para aparecerem aqui.')}</div>
+      </div>
+      <div class="home-panel">
+        <div class="home-panel-head">
+          <span>${icon('clock', 13)} Recentes</span>
+          <button data-action="cycle-sort">Ordenar</button>
+        </div>
+        <div class="home-mini-list">${miniList(recent, 'Seus cards recentes aparecem aqui.')}</div>
+      </div>
+      <div class="home-panel home-density-panel">
+        <div class="home-panel-head">
+          <span>${icon('sliders', 13)} Visual</span>
+        </div>
+        ${renderDensityControls()}
+      </div>
+    </section>
+  `;
+}
+
+function renderTrashTools(items) {
+  if (state.activeCol !== 'lixeira') return '';
+  const count = items.length;
+  const selectedCount = state.selectedIds?.length || 0;
+  return `
+    <section class="trash-tools" aria-label="Ferramentas da lixeira">
+      <div>
+        <strong>Lixeira</strong>
+        <span>${count} ${count === 1 ? 'item recuperavel' : 'itens recuperaveis'}${selectedCount ? ` · ${selectedCount} selecionados` : ''}</span>
+      </div>
+      <div class="trash-tools-actions">
+        <button data-action="select-all-visible">${icon('check-circle', 13)}<span>${selectedCount && selectedCount === count ? 'Limpar selecao' : 'Selecionar tudo'}</span></button>
+        <button data-action="empty-trash" class="danger" ${count ? '' : 'disabled'}>${icon('trash', 13)}<span>Esvaziar</span></button>
+      </div>
+    </section>
+  `;
+}
+
 function renderApp() {
   revokePdfPreviewUrls('card');
   document.body.classList.toggle('select-mode', !!state.selectMode);
@@ -2619,6 +2816,7 @@ function renderApp() {
   const selectedCount = state.selectedIds?.length || 0;
   const stats = statsLine();
   const globalTypes = globalTypeCounts();
+  const showHomeDashboard = state.activeCol === 'all' && state.activeKind === 'all' && !state.search.trim() && !state.loading;
 
   // Collections hidden from the sidebar (still exist in state so any items
   // already in them aren't orphaned — just not surfaced in nav).
@@ -2732,6 +2930,7 @@ function renderApp() {
             <button class="sort-btn" data-action="cycle-sort" title="Ordenar">
               ${icon('sort', 13)}<b>${SORT_OPTIONS.find(s => s.id === state.sortMode)?.label}</b>
             </button>
+            ${renderDensityControls()}
           </div>
         ` : ''}
 
@@ -2740,7 +2939,9 @@ function renderApp() {
             ? '<div style="padding:80px 0;text-align:center;opacity:0.4;font-style:italic;">carregando...</div>'
             : items.length === 0
               ? renderEmpty(state.items.length === 0)
-              : `<div class="grid">${items.map((it, i) => renderCard(it, i)).join('')}</div>`}
+              : `${showHomeDashboard ? renderHomeDashboard(items) : ''}
+                 ${renderTrashTools(items)}
+                 <div class="grid">${items.map((it, i) => renderCard(it, i)).join('')}</div>`}
         </section>
       </main>
 
@@ -3053,7 +3254,7 @@ function renderCard(item, idx) {
       ${fileHtml}
       ${contentHtml}
       ${bodyImagesHtml}
-      ${domain && !item.imageData ? renderLinkPreview(item.url, '', item.thumbUrl) : ''}
+      ${domain && !item.imageData ? renderLinkPreview(item.url, '', item.thumbUrl, item.linkTitle || item.title) : ''}
       ${foot}
     </article>
   `;
@@ -3272,7 +3473,7 @@ function renderComposerLinkPreview(d) {
   if (!d.url) return '';
   return `
     <div class="composer-link-card">
-      ${renderLinkPreview(d.url, 'composer-link-preview', d.thumbUrl)}
+      ${renderLinkPreview(d.url, 'composer-link-preview', d.thumbUrl, d.linkTitle || d.title)}
       <button class="composer-link-remove" data-action="composer-clear-link" type="button" title="Remover link">${icon('x', 13)}</button>
     </div>
   `;
@@ -3294,6 +3495,7 @@ function renderNewItemComposer(root, d, focusedId, focusedSel, overlayKind) {
 
           <input class="composer-title-input" id="f-title" value="${esc(d.title)}" placeholder="Título opcional">
           <textarea class="composer-textarea textarea note-textarea ${textStyleClass(normalizeTextStyle(d.textStyle))}" id="f-content" rows="7" placeholder="Cole um texto, link ou escreva uma nota...">${esc(d.content)}</textarea>
+          ${renderTextStyleToolbar(d.textStyle)}
 
           <div id="composer-link-preview-wrap">${renderComposerLinkPreview(d)}</div>
           <div id="composer-attachment-wrap">${renderComposerAttachmentPreview(d)}</div>
@@ -3380,7 +3582,7 @@ function renderViewer(root) {
 
           <h1 class="view-title">${item.title ? esc(item.title) : 'Sem título'}</h1>
 
-          ${domain ? renderLinkPreview(item.url, 'view-link-preview', item.thumbUrl) : ''}
+          ${domain ? renderLinkPreview(item.url, 'view-link-preview', item.thumbUrl, item.linkTitle || item.title) : ''}
 
           ${item.fileStorageId ? `
             <div class="view-file">
@@ -3560,7 +3762,7 @@ function renderQuickAddPreviewContent(d) {
     `;
   }
   if (d.fileStorageId) return renderStoredFilePreview(d);
-  if (d.url) return renderLinkPreview(d.url, 'view-link-preview', d.thumbUrl);
+  if (d.url) return renderLinkPreview(d.url, 'view-link-preview', d.thumbUrl, d.linkTitle || d.title);
   return renderQuickTextPreview(d);
 }
 
@@ -3699,7 +3901,7 @@ function renderQuickAdd(root) {
                     </div>
                   `
                 : d.url
-                  ? renderLinkPreview(d.url, 'view-link-preview', d.thumbUrl)
+                  ? renderLinkPreview(d.url, 'view-link-preview', d.thumbUrl, d.linkTitle || d.title)
                   : `${renderQuickTextPreview(d)}`}
             </div>
           </div>
@@ -3729,7 +3931,7 @@ function renderSearchOverlay() {
       <div class="panel search-panel" data-stop-prop>
         <div class="search-head">
           ${icon('search', 17)}
-          <input class="search-input" id="search-input" placeholder="Buscar título, conteúdo, link, tag..." value="${esc(state.search)}">
+          <input class="search-input" id="search-input" placeholder="Buscar titulo, texto, pasta, tipo, dominio..." value="${esc(state.search)}">
           <kbd>ESC</kbd>
         </div>
         <div class="search-results" id="search-results">${renderSearchResultsHTML()}</div>
@@ -4047,11 +4249,14 @@ function renderSearchResultsHTML() {
   if (results.length === 0) return '<p class="search-empty">Nada encontrado</p>';
   return results.map(it => {
     const col = state.collections.find(c => c.id === it.collection);
+    const domain = it.url ? getDomain(it.url) : '';
+    const meta = [cardKindLabelForItem(it), domain, col?.name].filter(Boolean).join(' · ');
     return `
       <button class="search-result" data-action="open-result" data-id="${esc(it.id)}">
         <div class="search-result-text">
           <p class="search-result-title">${it.title ? esc(it.title) : 'Sem título'}</p>
           ${it.content ? `<p class="search-result-body">${esc(it.content)}</p>` : ''}
+          ${meta ? `<p class="search-result-meta">${esc(meta)}</p>` : ''}
         </div>
         ${col ? `<span class="search-result-coll" style="color:${col.color}">${esc(col.name)}</span>` : ''}
       </button>
@@ -4884,6 +5089,8 @@ function commitDraftFromDom() {
     url: $('#f-url')?.value.trim() || modalDraft.url || '',
     content: rawContent,
     bodyImages: itemBodyImages(modalDraft),
+    linkTitle: modalDraft.linkTitle || '',
+    author: modalDraft.author || '',
   };
   if (!item.url && detectedUrl) item.url = detectedUrl;
   if (item.fileStorageId) item.type = 'file';
@@ -4928,6 +5135,7 @@ function applyComposerAutoLink(text) {
     modalDraft.url = url;
     modalDraft.type = modalDraft.fileStorageId || modalDraft.imageData ? modalDraft.type : 'link';
     if (!modalDraft.title) modalDraft.title = getDomain(url) || '';
+    scheduleYouTubeTitleFill(url);
   } else if (modalDraft.type === 'link' && !modalDraft.fileStorageId && !modalDraft.imageData) {
     modalDraft.url = '';
     modalDraft.type = 'note';
@@ -5235,6 +5443,7 @@ document.addEventListener('click', (e) => {
       if (actionEl.dataset.root === 'all') state.activeCol = 'all';
       setActiveKind(actionEl.dataset.kind);
       break;
+    case 'set-density': setDensity(actionEl.dataset.density); break;
     case 'cycle-sort': cycleSortMode(); break;
     case 'export-library': exportLibrary(); break;
     case 'import-library': importLibrary(); break;

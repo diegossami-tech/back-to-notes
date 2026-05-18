@@ -9,6 +9,8 @@
   'use strict';
 
   const KEYS = ['palette', 'ritmo', 'voz'];
+  const STORAGE_KEY = 'backtonotes:tweaks:v1';
+  const DENSITY_KEY = 'backtonotes:card-density:v1';
 
   const OPTIONS = {
     palette: [
@@ -40,7 +42,14 @@
   };
 
   const defaults = window.__btnTweakDefaults || { palette: 'bosque', ritmo: 'confortavel', voz: 'editorial' };
-  let current = { ...defaults };
+  function storedTweaks() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; } catch { return {}; }
+  }
+  let current = { ...defaults, ...storedTweaks() };
+  try {
+    const savedDensity = localStorage.getItem(DENSITY_KEY);
+    if (savedDensity) current.ritmo = savedDensity;
+  } catch {}
   let panelOpen = false;
 
   function applyAll() {
@@ -54,6 +63,10 @@
     if (current[key] === value) return;
     current[key] = value;
     applyAll();
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+      if (key === 'ritmo') localStorage.setItem(DENSITY_KEY, value);
+    } catch {}
     try {
       window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [key]: value } }, '*');
     } catch {}
