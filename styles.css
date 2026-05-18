@@ -4419,6 +4419,51 @@ body.dragging-item .card:not(.dragging):hover {
   }
 }
 
+@media (min-width: 900px) {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
+
+  .card,
+  html[data-palette] .card,
+  .card.variant-image,
+  .card.variant-pdf,
+  .card.variant-video {
+    height: 380px;
+  }
+
+  .card-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    flex: 0 0 auto;
+  }
+
+  .card-content {
+    -webkit-line-clamp: 3;
+  }
+
+  .card-image,
+  .card.variant-image .card-image,
+  .card-image-wrap,
+  .card-pdf-preview,
+  .video-thumb-wrap {
+    height: 140px;
+    max-height: 140px;
+  }
+
+  .link-preview {
+    max-height: 154px;
+    overflow: hidden;
+    flex: 0 0 auto;
+  }
+
+  .card-foot {
+    flex: 0 0 auto;
+  }
+}
+
 @media (min-width: 1440px) {
   .grid {
     grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -4430,6 +4475,7 @@ body.dragging-item .card:not(.dragging):hover {
   .card.variant-image,
   .card.variant-pdf,
   .card.variant-video {
+    height: 318px;
     padding: 14px;
   }
 
@@ -4438,7 +4484,7 @@ body.dragging-item .card:not(.dragging):hover {
     line-height: 1.25;
     margin-bottom: 6px;
     display: -webkit-box;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
@@ -4450,13 +4496,16 @@ body.dragging-item .card:not(.dragging):hover {
   .card-content {
     font-size: 12.5px;
     line-height: 1.5;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 2;
   }
 
   .card-image,
   .card.variant-image .card-image,
-  .card-image-wrap {
+  .card-image-wrap,
+  .card-pdf-preview,
+  .video-thumb-wrap {
     height: 116px;
+    max-height: 116px;
   }
 
   .card-foot {
