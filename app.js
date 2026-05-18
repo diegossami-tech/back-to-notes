@@ -2952,14 +2952,16 @@ function renderCard(item, idx) {
     : '';
   const foot = `
     <div class="card-foot">
-      <span class="card-foot-left">
+      <span class="card-foot-meta">
         <span class="card-date">${icon('clock', 12)}<span>${esc(dateLabel)}</span></span>
-        <span class="card-foot-sep">•</span>
+        <span class="card-foot-sep">&bull;</span>
+        <span class="card-read-time">${esc(metaLabel)}</span>
       </span>
-      <span class="card-read-time">${esc(metaLabel)}</span>
-      <button class="card-pin ${isPinned ? 'active' : ''}" data-action="toggle-pin-item" data-id="${esc(item.id)}" title="${isPinned ? 'Desafixar card' : 'Fixar card na tela inicial'}" aria-label="${isPinned ? 'Desafixar card' : 'Fixar card na tela inicial'}">${icon('pin', 13)}</button>
-      <div class="tags">${tagsHtml}</div>
-      ${studyHtml}
+      <span class="card-foot-actions">
+        <button class="card-pin ${isPinned ? 'active' : ''}" data-action="toggle-pin-item" data-id="${esc(item.id)}" title="${isPinned ? 'Desafixar card' : 'Fixar card na tela inicial'}" aria-label="${isPinned ? 'Desafixar card' : 'Fixar card na tela inicial'}">${icon('pin', 13)}</button>
+        ${tagsHtml ? `<span class="tags">${tagsHtml}</span>` : ''}
+        ${studyHtml}
+      </span>
     </div>
   `;
 
@@ -2970,12 +2972,10 @@ function renderCard(item, idx) {
         ${selectMark}
         <div class="card-image-wrap">
           <img class="card-image" src="${esc(item.imageData)}" alt="" draggable="false">
-          <div class="card-image-overlay">
-            ${head}
-            ${titleHtml}
-          </div>
         </div>
         <div class="card-body">
+          ${head}
+          ${titleHtml}
           ${contentHtml}
           ${bodyImagesHtml}
           ${foot}

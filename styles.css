@@ -4135,13 +4135,20 @@ html[data-palette="lousa"] .sidebar-trash:hover { background: rgba(237,229,208,0
   color: #8a8a9a;
   border-top: 1px solid #f0f0f0;
   align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
 }
-.card-foot-left,
+.card-foot-meta,
 .card-date {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   min-width: 0;
+}
+.card-foot-meta {
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .card-date {
   font-family: var(--font-sans);
@@ -4149,23 +4156,35 @@ html[data-palette="lousa"] .sidebar-trash:hover { background: rgba(237,229,208,0
   color: #8a8a9a;
   opacity: 1;
   letter-spacing: 0;
+  flex: 0 0 auto;
 }
 .card-foot-sep {
   color: #c5c5d0;
+  flex: 0 0 auto;
 }
 .card-read-time {
-  margin-left: auto;
   color: #8a8a9a;
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
+.card-foot-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
 .card-foot .tags {
-  width: 100%;
-  order: 5;
+  width: auto;
+  max-width: 92px;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 .card-pin,
 .study-toggle {
-  order: 4;
+  flex: 0 0 auto;
 }
 
 .card.variant-image {
@@ -4178,6 +4197,7 @@ html[data-palette="lousa"] .sidebar-trash:hover { background: rgba(237,229,208,0
   overflow: hidden;
   border-radius: 16px 16px 0 0;
   background: #f7f7fb;
+  border-bottom: 1px solid #f0f0f0;
 }
 .card.variant-image .card-image {
   width: 100%;
@@ -4192,28 +4212,8 @@ html[data-palette="lousa"] .sidebar-trash:hover { background: rgba(237,229,208,0
 .card.variant-image:hover .card-image {
   transform: scale(1.08);
 }
-.card-image-overlay {
-  position: absolute;
-  inset: auto 0 0;
-  padding: 48px 14px 14px;
-  background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
-  color: #fff;
-}
-.card-image-overlay .card-top {
-  margin-bottom: 6px;
-}
-.card-image-overlay .card-title,
-.card-image-overlay .card-coll {
-  color: #fff !important;
-}
-.card-image-overlay .card-title {
-  margin-bottom: 0;
-  text-shadow: 0 1px 12px rgba(0,0,0,0.38);
-}
-.card-image-overlay .card-type {
-  background: rgba(255,255,255,0.18);
-  color: #fff;
-  backdrop-filter: blur(6px);
+.card.variant-image .card-body {
+  padding: 14px 14px 12px;
 }
 
 .link-preview {
