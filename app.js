@@ -66,6 +66,7 @@ const SIDEBAR_SYSTEM_TYPE_MAP = {
   prints: 'print',
 };
 const DOCUMENT_KINDS = new Set(['pdf', 'word', 'file']);
+const TRASH_FOLDER_PREFIX = 'trash-folder:';
 
 const STORAGE_KEY = 'biblioteca:v1';
 const ONBOARDING_KEY = 'backtonotes:onboarding:v1';
@@ -199,6 +200,7 @@ function isWordFileLike(file) {
 }
 
 function cardTypeKind(item) {
+  if (item?.isTrashFolder) return 'folder';
   if (!item) return 'file';
   if (item.imageData || item.type === 'image') return 'print';
   if (item.fileStorageId || item.type === 'file') {
@@ -210,6 +212,18 @@ function cardTypeKind(item) {
   if (item.type === 'post') return 'post';
   if (item.type === 'note') return 'text';
   return 'file';
+}
+
+function isTrashFolderId(id) {
+  return String(id || '').startsWith(TRASH_FOLDER_PREFIX);
+}
+
+function folderTrashId(id) {
+  return `${TRASH_FOLDER_PREFIX}${id}`;
+}
+
+function folderIdFromTrashId(id) {
+  return String(id || '').replace(TRASH_FOLDER_PREFIX, '');
 }
 
 function itemMatchesKind(item, kind) {
@@ -1459,6 +1473,10 @@ function deleteItem(id) {
 }
 
 function restoreItem(id) {
+  if (isTrashFolderId(id)) {
+    restoreCollection(folderIdFromTrashId(id));
+    return;
+  }
   state.items = state.items.map(i => i.id === id ? { ...i, deletedAt: null } : i);
   state.viewing = null;
   persist();
@@ -1466,18 +1484,57 @@ function restoreItem(id) {
   showToast('Item restaurado');
 }
 
+function restoreCollection(id) {
+  const col = state.collections.find(c => c.id === id && c.deletedAt);
+  if (!col) return;
+  state.collections = state.collections.map(c => c.id === id ? { ...c, deletedAt: null } : c);
+  state.activeCol = id;
+  state.activeKind = 'all';
+  state.selectedIds = [];
+  state.selectMode = false;
+  persist();
+  renderAll();
+  showToast('Pasta restaurada');
+}
+
+function deleteFolderFromTrash(trashId) {
+  const id = folderIdFromTrashId(trashId);
+  const col = state.collections.find(c => c.id === id && c.deletedAt);
+  if (!col) return;
+  confirmDialog({
+    title: 'Apagar pasta definitivamente?',
+    message: `A pasta "${col.name}" sera apagada para sempre. Os cards dentro dela continuam em Tudo.`,
+    confirmText: 'Apagar para sempre',
+    cancelText: 'Cancelar',
+    danger: true,
+  }).then((ok) => {
+    if (!ok) return;
+    state.collections = state.collections.filter(c => c.id !== id);
+    state.items = state.items.map(item => item.collection === id ? { ...item, collection: undefined } : item);
+    state.selectedIds = state.selectedIds.filter(selectedId => selectedId !== trashId);
+    persist();
+    renderAll();
+    showToast('Pasta apagada para sempre');
+  });
+}
+
 function emptyTrash() {
-  const trashed = state.items.filter(i => i.deletedAt);
-  if (!trashed.length) return;
+  const trashedItems = state.items.filter(i => i.deletedAt);
+  const trashedFolders = state.collections.filter(c => !c.system && c.deletedAt);
+  const count = trashedItems.length + trashedFolders.length;
+  if (!count) return;
   confirmDialog({
     title: 'Esvaziar lixeira?',
-    message: `${trashed.length} ${trashed.length === 1 ? 'item será apagado' : 'itens serão apagados'} para sempre.`,
+    message: `${count} ${count === 1 ? 'item sera apagado' : 'itens serao apagados'} para sempre.`,
     confirmText: 'Esvaziar',
     cancelText: 'Cancelar',
     danger: true,
   }).then((ok) => {
     if (!ok) return;
+    const folderIds = new Set(trashedFolders.map(folder => folder.id));
     state.items = state.items.filter(i => !i.deletedAt);
+    state.items = state.items.map(item => folderIds.has(item.collection) ? { ...item, collection: undefined } : item);
+    state.collections = state.collections.filter(c => c.system || !c.deletedAt);
     persist();
     renderAll();
   });
@@ -1571,7 +1628,9 @@ function toggleSelectMode(force) {
 
 function toggleItemSelection(id) {
   if (!id) return;
-  const item = state.items.find(i => i.id === id && (state.activeCol === 'lixeira' ? i.deletedAt : !i.deletedAt));
+  const item = isTrashFolderId(id)
+    ? trashFolderEntries().find(entry => entry.id === id)
+    : state.items.find(i => i.id === id && (state.activeCol === 'lixeira' ? i.deletedAt : !i.deletedAt));
   if (!item) return;
   const set = selectedItemSet();
   const selected = !set.has(id);
@@ -1612,7 +1671,10 @@ function selectAllVisibleItems() {
 
 function permanentlyDeleteSelectedTrash() {
   const ids = new Set(state.selectedIds || []);
-  const count = state.items.filter(item => ids.has(item.id) && item.deletedAt).length;
+  const folderIds = new Set([...ids].filter(isTrashFolderId).map(folderIdFromTrashId));
+  const itemCount = state.items.filter(item => ids.has(item.id) && item.deletedAt).length;
+  const folderCount = state.collections.filter(col => folderIds.has(col.id) && col.deletedAt).length;
+  const count = itemCount + folderCount;
   if (!count) return;
   confirmDialog({
     title: count === 1 ? 'Apagar item definitivamente?' : `Apagar ${count} itens definitivamente?`,
@@ -1623,6 +1685,8 @@ function permanentlyDeleteSelectedTrash() {
   }).then((ok) => {
     if (!ok) return;
     state.items = state.items.filter(item => !(ids.has(item.id) && item.deletedAt));
+    state.collections = state.collections.filter(col => !(folderIds.has(col.id) && col.deletedAt));
+    state.items = state.items.map(item => folderIds.has(item.collection) ? { ...item, collection: undefined } : item);
     state.selectedIds = [];
     state.selectMode = false;
     persist();
@@ -1736,15 +1800,14 @@ function deleteCollection(id) {
   const col = state.collections.find(c => c.id === id);
   if (!col || col.system) return;
   confirmDialog({
-    title: `Apagar “${col.name}”?`,
-    message: 'A pasta sera removida. Os itens dentro ficam sem pasta e continuam em Tudo.',
-    confirmText: 'Deletar pasta',
+    title: `Apagar "${col.name}"?`,
+    message: 'A pasta vai para a lixeira. Os cards dentro dela continuam salvos e aparecem em Tudo.',
+    confirmText: 'Mover para lixeira',
     cancelText: 'Cancelar',
     danger: true,
   }).then((ok) => {
     if (!ok) return;
-    state.collections = state.collections.filter(c => c.id !== id);
-    state.items = state.items.map(i => i.collection === id ? { ...i, collection: undefined } : i);
+    state.collections = state.collections.map(c => c.id === id ? { ...c, deletedAt: Date.now() } : c);
     if (state.activeCol === id) state.activeCol = 'all';
     state.activeKind = 'all';
     persist();
@@ -1794,7 +1857,7 @@ function cycleSortMode() {
 }
 
 function userCollections() {
-  return state.collections.filter(c => !c.system);
+  return state.collections.filter(c => !c.system && !c.deletedAt);
 }
 
 function isUserCollectionId(id) {
@@ -1866,6 +1929,7 @@ function toggleSidebar(open) {
 
 // ============ DERIVED ============
 function itemInActiveScope(it) {
+  if (it?.isTrashFolder) return state.activeCol === 'lixeira';
   const isTrashView = state.activeCol === 'lixeira';
   if (isTrashView) return !!it.deletedAt;
   if (it.deletedAt) return false;
@@ -1874,7 +1938,10 @@ function itemInActiveScope(it) {
 
 function filteredItems() {
   const q = state.search.trim().toLowerCase();
-  let items = state.items.filter(it => {
+  const sourceItems = state.activeCol === 'lixeira'
+    ? [...state.items, ...trashFolderEntries()]
+    : state.items;
+  let items = sourceItems.filter(it => {
     if (!itemInActiveScope(it)) return false;
     if (!itemMatchesKind(it, state.activeKind)) return false;
     if (state.activeTag && !(it.tags || []).includes(state.activeTag)) return false;
@@ -1901,9 +1968,28 @@ function filteredItems() {
 
 function collCounts() {
   const live = state.items.filter(i => !i.deletedAt);
-  const m = { all: live.length, lixeira: state.items.length - live.length };
+  const trashedFolders = state.collections.filter(c => !c.system && c.deletedAt).length;
+  const m = { all: live.length, lixeira: (state.items.length - live.length) + trashedFolders };
   live.forEach(i => { m[i.collection] = (m[i.collection] || 0) + 1; });
   return m;
+}
+
+function trashFolderEntries() {
+  return state.collections
+    .filter(c => !c.system && c.deletedAt)
+    .map(col => ({
+      id: folderTrashId(col.id),
+      isTrashFolder: true,
+      folderId: col.id,
+      type: 'folder',
+      title: col.name || 'Pasta',
+      icon: col.icon || 'folder',
+      color: col.color || '#87807a',
+      deletedAt: col.deletedAt,
+      updatedAt: col.deletedAt,
+      createdAt: col.createdAt || col.deletedAt,
+      itemCount: state.items.filter(item => item.collection === col.id && !item.deletedAt).length,
+    }));
 }
 
 function tagCounts() {
@@ -2365,7 +2451,7 @@ function renderApp() {
   // Collections hidden from the sidebar (still exist in state so any items
   // already in them aren't orphaned — just not surfaced in nav).
   const HIDDEN_FROM_SIDEBAR = new Set(['estudar', 'estudado', 'escritos']);
-  const sysCols = state.collections.filter(c => c.system && !HIDDEN_FROM_SIDEBAR.has(c.id));
+  const sysCols = state.collections.filter(c => c.system && !c.deletedAt && !HIDDEN_FROM_SIDEBAR.has(c.id));
   const sidebarTextItem = { id: 'text', name: 'Texto', icon: 'file-text', color: '#6b1f2a' };
   const sidebarSystemTypeItems = sysCols
     .map(col => ({ ...col, id: SIDEBAR_SYSTEM_TYPE_MAP[col.id], collectionId: col.id }))
@@ -2375,7 +2461,7 @@ function renderApp() {
   }
   const sidebarTypeItems = uniqueSidebarTypeItems(sidebarSystemTypeItems);
   const userCols = state.collections
-    .filter(c => !c.system)
+    .filter(c => !c.system && !c.deletedAt)
     .sort((a, b) => (b.pinnedAt || 0) - (a.pinnedAt || 0));
 
   $('#app').innerHTML = `
@@ -2594,7 +2680,37 @@ function renderEmpty(isNew) {
   `;
 }
 
+function renderTrashFolderCard(folder, idx) {
+  const isSelected = selectedItemSet().has(folder.id);
+  const selectMark = state.selectMode
+    ? `<span class="card-select-mark" data-action="toggle-card-select" data-id="${esc(folder.id)}" aria-label="${isSelected ? 'Desmarcar pasta' : 'Selecionar pasta'}">${isSelected ? icon('check-circle', 18) : icon('circle', 18)}</span>`
+    : '';
+  return `
+    <article class="card variant-file trash-folder-card ${state.selectMode ? 'select-mode-card' : ''} ${isSelected ? 'selected' : ''}" data-card-id="${esc(folder.id)}" draggable="false" style="animation-delay:${Math.min(idx * 25, 200)}ms">
+      ${selectMark}
+      <div class="card-top">
+        <span class="card-type">${icon('folder', 11)}<span>Pasta deletada</span></span>
+        <span class="card-coll" style="color:${esc(folder.color)}">Lixeira</span>
+      </div>
+      <h3 class="card-title">${esc(folder.title)}</h3>
+      <div class="card-file">
+        <span class="card-file-icon" style="color:${esc(folder.color)}">${icon(folder.icon || 'folder', 16)}</span>
+        <span class="card-file-text">
+          <strong>${folder.itemCount} ${folder.itemCount === 1 ? 'card dentro' : 'cards dentro'}</strong>
+          <small>apagada ${esc(formatDate(folder.deletedAt))}</small>
+        </span>
+      </div>
+      <div class="card-foot trash-folder-actions">
+        <span class="card-date">${esc(formatDate(folder.deletedAt))}</span>
+        <button class="study-toggle" data-action="restore-item" data-id="${esc(folder.id)}" title="Restaurar pasta">${icon('upload', 17)}</button>
+        <button class="study-toggle danger" data-action="delete-folder-trash" data-id="${esc(folder.id)}" title="Apagar pasta para sempre">${icon('trash', 17)}</button>
+      </div>
+    </article>
+  `;
+}
+
 function renderCard(item, idx) {
+  if (item?.isTrashFolder) return renderTrashFolderCard(item, idx);
   const type = ITEM_TYPES.find(t => t.id === item.type) || ITEM_TYPES[0];
   const col = state.collections.find(c => c.id === item.collection);
   const isStudyable = item.collection === 'estudar' || item.collection === 'estudado';
@@ -3412,6 +3528,7 @@ function statsActionLabel(action) {
     'delete-item': 'Enviar para lixeira',
     'restore-item': 'Restaurar item',
     'delete-selected-trash': 'Apagar lixeira',
+    'delete-folder-trash': 'Apagar pasta da lixeira',
     'export-library': 'Exportar biblioteca',
     'import-library': 'Importar biblioteca',
     'open-sync': 'Abrir login/sync',
@@ -4549,6 +4666,7 @@ document.addEventListener('click', (e) => {
     case 'clear-selection': clearSelection({ exit: true }); break;
     case 'select-all-visible': selectAllVisibleItems(); break;
     case 'delete-selected-trash': permanentlyDeleteSelectedTrash(); break;
+    case 'delete-folder-trash': deleteFolderFromTrash(id); break;
     case 'bulk-move': moveSelectedItemsToCollection(id); break;
     case 'new-item': openEditor(null); break;
     case 'view':

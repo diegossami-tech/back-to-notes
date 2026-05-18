@@ -1213,6 +1213,8 @@ body.dragging-item .folder-empty { opacity: 0.7; }
 }
 .study-toggle:active { background: rgba(28,24,20,0.06); transform: scale(0.92); }
 .study-toggle.studied { opacity: 1; color: var(--moss); }
+.study-toggle.danger { color: var(--primary); opacity: 0.75; }
+.study-toggle.danger:hover { background: rgba(190,45,64,0.1); opacity: 1; }
 
 /* ============ EMPTY STATE ============ */
 .empty {
@@ -1919,6 +1921,23 @@ body.ext-dragging .ext-drop-overlay { display: flex; }
 .view-file small {
   color: var(--muted);
   font-size: 12px;
+}
+.trash-folder-card .card-file {
+  background: var(--cream-2);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-sm);
+}
+.trash-folder-card .card-file-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+.trash-folder-actions {
+  justify-content: space-between;
 }
 .card-file {
   padding: 10px;
