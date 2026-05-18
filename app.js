@@ -852,10 +852,43 @@ function persist() {
 
 function persistableItems(items = state.items) {
   return items.map(item => {
-    if (!item?.imageData || !item.imageStorageId) return item;
-    const { imageData, originalImageData, cropRect, ...rest } = item;
-    return rest;
+    const next = { ...item };
+    if (next.imageData && next.imageStorageId) {
+      delete next.imageData;
+      delete next.originalImageData;
+      delete next.cropRect;
+    }
+    if (Array.isArray(next.bodyImages)) {
+      next.bodyImages = next.bodyImages.map(img => {
+        const clean = { ...img };
+        if (clean.storageId) delete clean.dataUrl;
+        return clean;
+      });
+    }
+    return next;
   });
+}
+
+function itemBodyImages(item) {
+  return normalizeBodyImages(item?.bodyImages).filter(img => img.dataUrl || img.storageId);
+}
+
+function hasBodyImages(item) {
+  return itemBodyImages(item).length > 0;
+}
+
+function renderBodyImages(images, className = '') {
+  const ready = normalizeBodyImages(images).filter(img => img.dataUrl);
+  if (!ready.length) return '';
+  return `
+    <div class="body-image-strip ${className}">
+      ${ready.map(img => `
+        <button class="body-image-thumb" data-action="open-lightbox" data-src="${esc(img.dataUrl)}" type="button" title="${esc(img.name || 'Imagem do texto')}">
+          <img src="${esc(img.dataUrl)}" alt="${esc(img.name || 'Imagem no texto')}" draggable="false">
+        </button>
+      `).join('')}
+    </div>
+  `;
 }
 
 async function dataUrlToBlob(dataUrl) {
@@ -871,6 +904,22 @@ async function putStoredDataUrl(dataUrl, name = 'imagem') {
   return await putStoredFile(file);
 }
 
+function normalizeBodyImages(images) {
+  return Array.isArray(images)
+    ? images
+        .filter(img => img && (img.dataUrl || img.storageId))
+        .map(img => ({
+          id: img.id || 'bodyimg_' + uid(),
+          dataUrl: img.dataUrl || '',
+          storageId: img.storageId || '',
+          name: img.name || 'imagem',
+          type: img.type || 'image/png',
+          size: img.size || 0,
+          createdAt: img.createdAt || Date.now(),
+        }))
+    : [];
+}
+
 async function externalizeImagesForStorage() {
   let changed = false;
   for (const item of state.items) {
@@ -882,6 +931,24 @@ async function externalizeImagesForStorage() {
     item.imageFileType = stored.type;
     item.imageFileSize = stored.size;
     changed = true;
+  }
+  for (const item of state.items) {
+    const bodyImages = normalizeBodyImages(item?.bodyImages);
+    if (!bodyImages.length) continue;
+    let itemChanged = false;
+    for (const img of bodyImages) {
+      if (!img.dataUrl || img.storageId) continue;
+      const stored = await putStoredDataUrl(img.dataUrl, img.name || item.title || 'imagem');
+      img.storageId = stored.id;
+      img.name = stored.name;
+      img.type = stored.type;
+      img.size = stored.size;
+      itemChanged = true;
+    }
+    if (itemChanged) {
+      item.bodyImages = bodyImages;
+      changed = true;
+    }
   }
   return changed;
 }
@@ -896,15 +963,30 @@ function blobToDataUrl(blob) {
 }
 
 async function hydrateStoredImages() {
-  const missing = state.items.filter(item => item?.imageStorageId && !item.imageData);
+  const missing = state.items.filter(item =>
+    (item?.imageStorageId && !item.imageData) ||
+    normalizeBodyImages(item?.bodyImages).some(img => img.storageId && !img.dataUrl)
+  );
   if (!missing.length) return;
   let changed = false;
   for (const item of missing) {
     try {
-      const stored = await getStoredFile(item.imageStorageId);
-      if (!stored?.blob) continue;
-      item.imageData = await blobToDataUrl(stored.blob);
-      changed = true;
+      if (item.imageStorageId && !item.imageData) {
+        const stored = await getStoredFile(item.imageStorageId);
+        if (stored?.blob) {
+          item.imageData = await blobToDataUrl(stored.blob);
+          changed = true;
+        }
+      }
+      const bodyImages = normalizeBodyImages(item.bodyImages);
+      for (const img of bodyImages) {
+        if (!img.storageId || img.dataUrl) continue;
+        const stored = await getStoredFile(img.storageId);
+        if (!stored?.blob) continue;
+        img.dataUrl = await blobToDataUrl(stored.blob);
+        changed = true;
+      }
+      if (bodyImages.length) item.bodyImages = bodyImages;
     } catch (err) {
       console.warn('Image hydrate failed:', err);
     }
@@ -1364,7 +1446,7 @@ function saveItem(item) {
   renderAll();
   // Kick off thumb enrichment if this item has a URL and no thumb yet.
   const saved = state.items.find(i => i.id === (item.id || state.items[0]?.id));
-  if (saved) trackEvent('card_saved', cardTypeKind(saved), { type: saved.type || '', has_file: !!saved.fileStorageId, has_image: !!saved.imageData });
+  if (saved) trackEvent('card_saved', cardTypeKind(saved), { type: saved.type || '', has_file: !!saved.fileStorageId, has_image: !!saved.imageData, body_images: itemBodyImages(saved).length });
   if (saved?.url && !saved.thumbUrl && !saved.thumbFailed) {
     enrichItemAsync(saved.id);
   }
@@ -2210,6 +2292,54 @@ async function attachImageToEditingItem(file, sourceLabel = 'Imagem colada') {
   }
 }
 
+function refreshEditorBodyImagesUI() {
+  const zone = document.querySelector('[data-body-image-drop]');
+  if (!zone || !modalDraft) return;
+  zone.innerHTML = renderEditorBodyImages(modalDraft.bodyImages);
+}
+
+async function addBodyImagesToEditingItem(files, sourceLabel = 'Imagem adicionada ao texto') {
+  const imageFiles = Array.from(files || []).filter(isImageFileLike);
+  if (!imageFiles.length || !modalDraft) return false;
+  try {
+    syncDraftFromDom();
+    modalDraft.type = 'note';
+    const current = itemBodyImages(modalDraft);
+    const added = [];
+    for (const file of imageFiles) {
+      const raw = await fileToDataUrl(file);
+      const dataUrl = await compressImageDataUrl(raw, 2400);
+      added.push({
+        id: 'bodyimg_' + uid(),
+        dataUrl,
+        name: file.name || 'imagem',
+        type: file.type || 'image/png',
+        size: file.size || 0,
+        createdAt: Date.now(),
+      });
+    }
+    modalDraft.bodyImages = [...current, ...added];
+    state.editing = { ...modalDraft, isNew: !modalDraft.id };
+    setEditorTypeUI('note');
+    refreshEditorBodyImagesUI();
+    trackEvent('action', 'body_image_add', { count: added.length });
+    showToast(sourceLabel);
+    return true;
+  } catch (err) {
+    console.error(err);
+    showToast('Nao foi possivel adicionar a imagem ao texto');
+    return false;
+  }
+}
+
+function removeBodyImageFromEditor(id) {
+  if (!modalDraft || !id) return;
+  syncDraftFromDom();
+  modalDraft.bodyImages = itemBodyImages(modalDraft).filter(img => img.id !== id);
+  state.editing = { ...modalDraft, isNew: !modalDraft.id };
+  refreshEditorBodyImagesUI();
+}
+
 async function handleEditorFileUpload(file) {
   if (!file) return;
   if (!modalDraft) return;
@@ -2762,6 +2892,7 @@ function renderCard(item, idx) {
   `;
   const titleHtml = `<h3 class="card-title">${item.title ? esc(item.title) : '<em style="opacity:0.5">Sem título</em>'}</h3>`;
   const contentHtml = item.content ? `<p class="card-content ${isCenteredTextPreview ? 'centered-preview' : ''} ${contentStyleClass}">${esc(item.content)}</p>` : '';
+  const bodyImagesHtml = renderBodyImages(item.bodyImages, 'card-body-images');
   const tagsHtml = tags.slice(0, 3).map(t => `<span class="tag">${esc(t)}</span>`).join('') +
     (tags.length > 3 ? `<span class="tag-more">+${tags.length - 3}</span>` : '');
   const fileHtml = item.fileStorageId && !hasPdfPreview ? `
@@ -2794,6 +2925,7 @@ function renderCard(item, idx) {
         <div class="card-body">
           ${head}${titleHtml}
           ${contentHtml}
+          ${bodyImagesHtml}
           ${foot}
         </div>
       </article>
@@ -2822,6 +2954,7 @@ function renderCard(item, idx) {
             </span>
           </div>
           ${contentHtml}
+          ${bodyImagesHtml}
           ${foot}
         </div>
       </article>
@@ -2852,6 +2985,7 @@ function renderCard(item, idx) {
         <div class="card-body">
           ${head}${titleHtml}
           ${contentHtml}
+          ${bodyImagesHtml}
           ${foot}
         </div>
       </article>
@@ -2866,6 +3000,7 @@ function renderCard(item, idx) {
       ${titleHtml}
       ${fileHtml}
       ${contentHtml}
+      ${bodyImagesHtml}
       ${domain && !item.imageData ? renderLinkPreview(item.url, '', item.thumbUrl) : ''}
       ${foot}
     </article>
@@ -2899,6 +3034,7 @@ function renderModal() {
     content: it.content || '',
     url: it.url || '',
     imageData: it.imageData || '',
+    bodyImages: itemBodyImages(it),
     fileStorageId: it.fileStorageId || '',
     fileName: it.fileName || '',
     fileType: it.fileType || '',
@@ -2983,7 +3119,20 @@ function renderModal() {
             <label class="field-label" data-content-label>${d.type === 'note' ? 'Conteúdo' : 'Anotações'}</label>
             <div style="${d.type === 'note' ? '' : 'display:none'}">${renderTextStyleToolbar(d.textStyle)}</div>
             <textarea class="textarea ${d.type === 'note' ? `note-textarea ${textStyleClass(editorTextStyle)}` : ''}" id="f-content" rows="${d.type === 'note' ? 8 : 4}" placeholder="${d.type === 'note' ? 'Escreva aqui...' : 'O que achou? Por que salvou?'}">${esc(d.content)}</textarea>
-            <p class="field-hint">Tambem da para colar uma imagem aqui para salvar texto e preview no mesmo item.</p>
+            <div class="note-body-images-panel" id="note-body-images-panel" style="${d.type === 'note' ? '' : 'display:none'}">
+              <input class="body-image-input" id="f-body-image" type="file" accept="image/*" multiple>
+              <div class="note-body-image-actions">
+                <label class="body-image-upload-btn" for="f-body-image">
+                  ${icon('image', 15)}
+                  <span>Adicionar imagem ao texto</span>
+                </label>
+                <span class="body-image-hint">Cole, arraste ou escolha imagens do celular/computador.</span>
+              </div>
+              <div class="note-body-image-zone" data-body-image-drop>
+                ${renderEditorBodyImages(d.bodyImages)}
+              </div>
+            </div>
+            <p class="field-hint">Cole texto normalmente. Para imagens dentro da nota, use Ctrl+V no corpo, arraste a imagem ou toque em adicionar.</p>
           </div>
 
           <div>
@@ -3114,7 +3263,9 @@ function renderViewer(root) {
 
           ${item.content
             ? `<div class="view-content ${item.type === 'note' ? `serif ${viewTextStyleClass}` : ''}">${esc(item.content)}</div>`
-            : (item.imageData || item.fileStorageId) ? '' : '<p class="view-empty">Sem anotações ainda.</p>'}
+            : (item.imageData || item.fileStorageId || hasBodyImages(item)) ? '' : '<p class="view-empty">Sem anotações ainda.</p>'}
+
+          ${renderBodyImages(item.bodyImages, 'view-body-images')}
 
           ${tags.length ? `<div class="tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
         </div>
@@ -4087,13 +4238,24 @@ function isExternalDrag(e) {
   const types = e.dataTransfer?.types || [];
   return [...types].some(t => t === 'Files' || t === 'text/plain' || t === 'text/uri-list');
 }
+function isBodyImageDropTarget(target) {
+  return !!(state.editing && modalDraft?.type === 'note' && target?.closest?.('#f-content, [data-body-image-drop], #note-body-images-panel'));
+}
 document.addEventListener('dragenter', (e) => {
   if (!isExternalDrag(e) || draggingItemId !== null) return;
+  if (isBodyImageDropTarget(e.target)) {
+    document.querySelector('[data-body-image-drop]')?.classList.add('is-dragging');
+    return;
+  }
   extDragCounter++;
   document.body.classList.add('ext-dragging');
 });
 document.addEventListener('dragleave', (e) => {
   if (draggingItemId !== null) return;
+  if (isBodyImageDropTarget(e.target)) {
+    document.querySelector('[data-body-image-drop]')?.classList.remove('is-dragging');
+    return;
+  }
   extDragCounter = Math.max(0, extDragCounter - 1);
   if (extDragCounter === 0) document.body.classList.remove('ext-dragging');
 });
@@ -4103,8 +4265,13 @@ window.addEventListener('drop', async (e) => {
   e.preventDefault();
   extDragCounter = 0;
   document.body.classList.remove('ext-dragging');
+  document.querySelector('[data-body-image-drop]')?.classList.remove('is-dragging');
 
   const dt = e.dataTransfer;
+  if (isBodyImageDropTarget(e.target) && dt.files?.length) {
+    await addBodyImagesToEditingItem(dt.files, 'Imagem adicionada ao texto');
+    return;
+  }
   // File first
   const file = dt.files?.[0];
   if (file) {
@@ -4156,7 +4323,10 @@ window.addEventListener('drop', async (e) => {
   }
 });
 document.addEventListener('dragover', (e) => {
-  if (isExternalDrag(e)) e.preventDefault();
+  if (!isExternalDrag(e)) return;
+  e.preventDefault();
+  const zone = document.querySelector('[data-body-image-drop]');
+  if (zone) zone.classList.toggle('is-dragging', isBodyImageDropTarget(e.target));
 });
 
 // ============ IMAGE / CROP HELPERS ============
@@ -4183,6 +4353,25 @@ function renderEditorImagePreview(dataUrl, title = '') {
       <img src="${esc(dataUrl)}" alt="${esc(title || 'Foto selecionada')}" draggable="false">
     </button>
   ` : '';
+}
+
+function renderEditorBodyImages(images) {
+  const ready = normalizeBodyImages(images);
+  if (!ready.length) {
+    return `<div class="note-body-image-empty">${icon('image', 16)}<span>Solte uma imagem aqui para colocar dentro do texto.</span></div>`;
+  }
+  return `
+    <div class="editor-body-image-grid">
+      ${ready.map(img => `
+        <div class="editor-body-image" data-body-image-id="${esc(img.id)}">
+          ${img.dataUrl
+            ? `<button class="editor-body-image-preview" data-action="open-lightbox" data-src="${esc(img.dataUrl)}" type="button" title="${esc(img.name || 'Imagem do texto')}"><img src="${esc(img.dataUrl)}" alt="${esc(img.name || 'Imagem no texto')}" draggable="false"></button>`
+            : `<div class="editor-body-image-preview is-loading">${icon('image', 18)}</div>`}
+          <button class="editor-body-image-remove" data-action="remove-body-image" data-id="${esc(img.id)}" type="button" title="Remover imagem do texto">${icon('x', 13)}</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 function renderStoredFilePreview(d) {
@@ -4408,6 +4597,10 @@ document.addEventListener('paste', async (e) => {
       try { e.target.setSelectionRange(cursor, cursor); } catch {}
       if (modalDraft) modalDraft.content = e.target.value;
     }
+    if (modalDraft?.type === 'note' && e.target.id === 'f-content') {
+      await addBodyImagesToEditingItem([file], 'Imagem adicionada ao texto');
+      return;
+    }
     await attachImageToEditingItem(file);
     return;
   }
@@ -4435,12 +4628,14 @@ function commitDraftFromDom() {
     title: $('#f-title')?.value.trim() || '',
     url: $('#f-url')?.value.trim() || '',
     content: $('#f-content')?.value.trim() || '',
+    bodyImages: itemBodyImages(modalDraft),
   };
   if (item.type !== 'note' || !item.textStyle || isDefaultTextStyle(item.textStyle)) {
     delete item.textStyle;
   } else {
     item.textStyle = normalizeTextStyle(item.textStyle);
   }
+  if (item.type !== 'note' || !item.bodyImages.length) delete item.bodyImages;
   return item;
 }
 function syncDraftFromDom() {
@@ -4502,6 +4697,8 @@ function setEditorTypeUI(type) {
   }
   const toolbar = $('#text-style-toolbar');
   if (toolbar) toolbar.style.display = type === 'note' ? '' : 'none';
+  const bodyImagesPanel = $('#note-body-images-panel');
+  if (bodyImagesPanel) bodyImagesPanel.style.display = type === 'note' ? '' : 'none';
   $$('#type-row [data-type]').forEach(btn => btn.classList.toggle('active', btn.dataset.type === type));
 }
 
@@ -4684,6 +4881,7 @@ document.addEventListener('click', (e) => {
     case 'apply-crop': applyImageCrop(); break;
     case 'clear-crop': clearImageCrop(); break;
     case 'clear-editor-image': clearEditorImage(); break;
+    case 'remove-body-image': removeBodyImageFromEditor(id); break;
     case 'clear-editor-file': clearEditorFile(); break;
     case 'download-file': downloadStoredFile(id); break;
     case 'open-pdf-reader': openPdfReader(id); break;
@@ -4863,6 +5061,10 @@ document.addEventListener('change', async (e) => {
   if (e.target.id === 'f-file') {
     const file = e.target.files?.[0];
     await handleEditorFileUpload(file);
+  }
+  if (e.target.id === 'f-body-image') {
+    await addBodyImagesToEditingItem(e.target.files, 'Imagem adicionada ao texto');
+    e.target.value = '';
   }
 });
 
