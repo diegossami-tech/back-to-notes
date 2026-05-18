@@ -1672,6 +1672,161 @@ body.ext-dragging .ext-drop-overlay { display: flex; }
 }
 .modal-body > * + * { margin-top: 18px; }
 
+.composer-panel {
+  max-width: 620px;
+}
+.composer-head {
+  border-bottom: 0;
+  padding-bottom: 8px;
+}
+.composer-body {
+  padding-top: 4px;
+}
+.composer-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.composer-textarea {
+  min-height: 190px;
+  border: 0;
+  padding: 8px 2px;
+  resize: vertical;
+  font-size: 17px;
+  line-height: 1.55;
+  background: transparent;
+}
+.composer-textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+.composer-folder-block {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule-soft);
+}
+.composer-folder-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  margin-bottom: 8px;
+}
+.composer-folder-row {
+  gap: 7px;
+}
+.composer-folder-row .chip {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+.composer-foot {
+  align-items: center;
+}
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.composer-tool {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.composer-tool:hover {
+  background: rgba(28,24,20,0.05);
+  border-color: var(--rule);
+}
+.composer-tool:active {
+  transform: scale(0.94);
+}
+.composer-save {
+  min-height: 38px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: var(--r-sm);
+  background: var(--primary);
+  color: var(--cream);
+  font-size: 13px;
+  font-weight: 700;
+}
+.composer-link-card,
+.composer-attachment {
+  position: relative;
+  margin-top: 10px;
+}
+.composer-link-preview {
+  margin: 0;
+}
+.composer-link-remove,
+.composer-attachment-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--primary);
+  box-shadow: 0 4px 14px -8px rgba(28,24,20,0.5);
+}
+.composer-attachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 42px 10px 10px;
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-sm);
+  background: var(--cream);
+}
+.composer-attachment-icon {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--primary);
+  flex: 0 0 auto;
+}
+.composer-attachment-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.composer-attachment-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-attachment-text small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.composer-body-image-zone {
+  min-height: 0;
+  margin-top: 10px;
+}
+
 .view-meta {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   font-size: 10.5px;

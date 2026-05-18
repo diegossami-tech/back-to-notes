@@ -282,6 +282,13 @@ function normalizeUrl(text) {
   return null;
 }
 
+function extractFirstUrl(text) {
+  const value = String(text || '');
+  const match = value.match(/https?:\/\/[^\s<>"']+|(?:^|[\s(])([\w.-]+\.[a-z]{2,}(?:\/[^\s<>"']*)?)/i);
+  if (!match) return null;
+  return normalizeUrl((match[0] || match[1] || '').trim().replace(/^[\s(]+/, '').replace(/[),.;:!?]+$/, ''));
+}
+
 function formatDate(ts) {
   if (!ts) return '';
   const now = Date.now();
@@ -2252,7 +2259,8 @@ async function handleEditorImageUpload(file) {
     };
     if (!modalDraft.tags?.length) modalDraft.tags = ['imagem'];
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
-    refreshEditorImageUI();
+    if (isComposerOpen()) renderModal();
+    else refreshEditorImageUI();
     trackEvent('action', 'upload_image', { file_type: file.type || '', size: file.size || 0 });
     showToast('Foto carregada');
   } catch (err) {
@@ -2298,6 +2306,10 @@ function refreshEditorBodyImagesUI() {
   zone.innerHTML = renderEditorBodyImages(modalDraft.bodyImages);
 }
 
+function isComposerOpen() {
+  return !!document.querySelector('.composer-panel');
+}
+
 async function addBodyImagesToEditingItem(files, sourceLabel = 'Imagem adicionada ao texto') {
   const imageFiles = Array.from(files || []).filter(isImageFileLike);
   if (!imageFiles.length || !modalDraft) return false;
@@ -2340,6 +2352,19 @@ function removeBodyImageFromEditor(id) {
   refreshEditorBodyImagesUI();
 }
 
+async function handleComposerAttachmentUpload(files) {
+  const selected = Array.from(files || []).filter(Boolean);
+  if (!selected.length || !modalDraft) return;
+  const imageFiles = selected.filter(isImageFileLike);
+  const hasText = !!($('#f-content')?.value || modalDraft.content || '').trim();
+  if (imageFiles.length && imageFiles.length === selected.length && hasText) {
+    await addBodyImagesToEditingItem(imageFiles, imageFiles.length > 1 ? 'Imagens adicionadas ao texto' : 'Imagem adicionada ao texto');
+    renderModal();
+    return;
+  }
+  await handleEditorFileUpload(selected[0]);
+}
+
 async function handleEditorFileUpload(file) {
   if (!file) return;
   if (!modalDraft) return;
@@ -2366,7 +2391,8 @@ async function handleEditorFileUpload(file) {
       collection: modalDraft.collection || activeUserCollectionId(),
     };
     state.editing = { ...modalDraft, isNew: !modalDraft.id };
-    refreshEditorFileUI();
+    if (isComposerOpen()) renderModal();
+    else refreshEditorFileUI();
     trackEvent('action', 'upload_file', { file_type: stored.type || '', size: stored.size || 0 });
     showToast('Arquivo carregado');
   } catch (err) {
@@ -2386,7 +2412,8 @@ function clearEditorFile() {
     fileSize: 0,
   };
   state.editing = { ...modalDraft, isNew: !modalDraft.id };
-  refreshEditorFileUI();
+  if (isComposerOpen()) renderModal();
+  else refreshEditorFileUI();
 }
 
 function clearEditorImage() {
@@ -2399,7 +2426,8 @@ function clearEditorImage() {
     cropRect: null,
   };
   state.editing = { ...modalDraft, isNew: !modalDraft.id };
-  refreshEditorImageUI();
+  if (isComposerOpen()) renderModal();
+  else refreshEditorImageUI();
 }
 
 async function downloadStoredFile(itemId) {
@@ -3029,10 +3057,13 @@ function renderModal() {
   const isNew = !!it.isNew;
   const d = {
     id: it.id || null,
+    isNew,
     type: it.type || 'note',
     title: it.title || '',
     content: it.content || '',
     url: it.url || '',
+    thumbUrl: it.thumbUrl || '',
+    author: it.author || '',
     imageData: it.imageData || '',
     bodyImages: itemBodyImages(it),
     fileStorageId: it.fileStorageId || '',
@@ -3044,9 +3075,13 @@ function renderModal() {
     textStyle: it.textStyle && !isDefaultTextStyle(it.textStyle) ? normalizeTextStyle(it.textStyle) : null,
     tags: Array.isArray(it.tags) ? [...it.tags] : [],
   };
+  const overlayKind = isMobile() ? 'bottom-sheet' : 'center';
+  if (isNew) {
+    renderNewItemComposer(root, d, focusedId, focusedSel, overlayKind);
+    return;
+  }
   const editorTextStyle = normalizeTextStyle(d.textStyle);
 
-  const overlayKind = isMobile() ? 'bottom-sheet' : 'center';
   root.innerHTML = `
     <div class="overlay ${overlayKind}" data-close-overlay>
       <div class="panel modal-panel" data-stop-prop>
@@ -3172,6 +3207,105 @@ function renderModal() {
   modalDraft = d;
   if (!modalWasOpen) {
     setTimeout(() => $('#f-title')?.focus(), 60);
+  } else if (focusedId) {
+    setTimeout(() => {
+      const el = $('#' + focusedId);
+      if (el) {
+        el.focus();
+        if (focusedSel !== null && el.setSelectionRange) {
+          try { el.setSelectionRange(focusedSel, focusedSel); } catch (e) {}
+        }
+      }
+    }, 0);
+  }
+  modalWasOpen = true;
+}
+
+function renderComposerAttachmentPreview(d) {
+  if (d.imageData) {
+    return `
+      <div class="composer-attachment">
+        <span class="composer-attachment-icon">${icon('image', 15)}</span>
+        <span class="composer-attachment-text"><strong>${esc(d.title || 'Imagem')}</strong><small>imagem anexada</small></span>
+        <button class="composer-attachment-remove" data-action="clear-editor-image" type="button" title="Remover">${icon('x', 13)}</button>
+      </div>
+      ${renderEditorImagePreview(d.imageData, d.title)}
+    `;
+  }
+  if (d.fileStorageId) {
+    return `
+      <div class="composer-attachment">
+        <span class="composer-attachment-icon">${icon(isPdfFileLike(d) ? 'file-text' : 'folder', 15)}</span>
+        <span class="composer-attachment-text"><strong>${esc(d.fileName || d.title || 'Arquivo')}</strong><small>${esc([d.fileType || 'arquivo', formatBytes(d.fileSize)].filter(Boolean).join(' - '))}</small></span>
+        <button class="composer-attachment-remove" data-action="clear-editor-file" type="button" title="Remover">${icon('x', 13)}</button>
+      </div>
+    `;
+  }
+  return '';
+}
+
+function renderComposerLinkPreview(d) {
+  if (!d.url) return '';
+  return `
+    <div class="composer-link-card">
+      ${renderLinkPreview(d.url, 'composer-link-preview', d.thumbUrl)}
+      <button class="composer-link-remove" data-action="composer-clear-link" type="button" title="Remover link">${icon('x', 13)}</button>
+    </div>
+  `;
+}
+
+function renderNewItemComposer(root, d, focusedId, focusedSel, overlayKind) {
+  root.innerHTML = `
+    <div class="overlay ${overlayKind}" data-close-overlay>
+      <div class="panel modal-panel composer-panel" data-stop-prop>
+        ${isMobile() ? '<div class="sheet-grip"></div>' : ''}
+        <div class="modal-head composer-head">
+          <span class="modal-head-label">Novo item</span>
+          <button class="icon-btn" style="opacity:0.55" data-action="close-editor" title="Fechar  ESC">${icon('x', 17)}</button>
+        </div>
+
+        <div class="modal-body composer-body">
+          <input type="hidden" id="f-title" value="${esc(d.title)}">
+          <input type="hidden" id="f-url" value="${esc(d.url)}">
+          <input class="file-input" id="f-file" type="file" multiple>
+
+          <textarea class="composer-textarea textarea note-textarea ${textStyleClass(normalizeTextStyle(d.textStyle))}" id="f-content" rows="7" placeholder="Cole um texto, link ou escreva uma nota...">${esc(d.content)}</textarea>
+
+          <div id="composer-link-preview-wrap">${renderComposerLinkPreview(d)}</div>
+          <div id="composer-attachment-wrap">${renderComposerAttachmentPreview(d)}</div>
+          <div class="note-body-image-zone composer-body-image-zone" data-body-image-drop>
+            ${d.bodyImages.length ? renderEditorBodyImages(d.bodyImages) : ''}
+          </div>
+
+          <div class="composer-folder-block">
+            <span class="composer-folder-label">${icon('folder', 13)} Pasta</span>
+            <div class="coll-row composer-folder-row" id="coll-row">
+              ${renderFolderPicker(d.collection, 'data-coll')}
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-foot composer-foot">
+          <div class="composer-tools">
+            <label class="composer-tool" for="f-file" title="Adicionar imagem, PDF, Word ou arquivo">
+              ${icon('image', 18)}
+            </label>
+            <button class="composer-tool" data-action="composer-paste-link" type="button" title="Colar link da área de transferência">
+              ${icon('link', 18)}
+            </button>
+          </div>
+          <button class="composer-save" data-action="save-item" type="button">
+            ${icon('check-circle', 16)}
+            <span>Salvar</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  modalDraft = d;
+  if (!modalWasOpen) {
+    setTimeout(() => $('#f-content')?.focus(), 60);
   } else if (focusedId) {
     setTimeout(() => {
       const el = $('#' + focusedId);
@@ -4268,6 +4402,11 @@ window.addEventListener('drop', async (e) => {
   document.querySelector('[data-body-image-drop]')?.classList.remove('is-dragging');
 
   const dt = e.dataTransfer;
+  if (state.editing && dt.files?.length) {
+    if (isBodyImageDropTarget(e.target)) await addBodyImagesToEditingItem(dt.files, 'Imagem adicionada ao texto');
+    else if (isComposerOpen()) await handleComposerAttachmentUpload(dt.files);
+    return;
+  }
   if (isBodyImageDropTarget(e.target) && dt.files?.length) {
     await addBodyImagesToEditingItem(dt.files, 'Imagem adicionada ao texto');
     return;
@@ -4604,6 +4743,10 @@ document.addEventListener('paste', async (e) => {
     await attachImageToEditingItem(file);
     return;
   }
+  if (state.editing && modalDraft?.isNew && e.target.id === 'f-content') {
+    setTimeout(() => applyComposerAutoLink($('#f-content')?.value || ''), 0);
+    return;
+  }
   if (state.editing || state.viewing || state.quickAdd || state.showSearch) return;
   if (isEditableTarget(e.target)) return;
   const hasImage = clipboardItems.some(it => it.type?.startsWith('image/'));
@@ -4623,19 +4766,35 @@ document.addEventListener('paste', async (e) => {
 // ============ MODAL DRAFT HELPERS ============
 function commitDraftFromDom() {
   if (!modalDraft) return null;
+  const rawContent = $('#f-content')?.value.trim() || '';
+  const detectedUrl = extractFirstUrl(rawContent);
   const item = {
     ...modalDraft,
-    title: $('#f-title')?.value.trim() || '',
-    url: $('#f-url')?.value.trim() || '',
-    content: $('#f-content')?.value.trim() || '',
+    title: $('#f-title')?.value.trim() || modalDraft.title || '',
+    url: $('#f-url')?.value.trim() || modalDraft.url || '',
+    content: rawContent,
     bodyImages: itemBodyImages(modalDraft),
   };
+  if (!item.url && detectedUrl) item.url = detectedUrl;
+  if (item.fileStorageId) item.type = 'file';
+  else if (item.imageData) item.type = 'image';
+  else if (item.url) item.type = 'link';
+  else item.type = 'note';
+  const contentIsOnlyUrl = item.url && normalizeUrl(item.content) === item.url;
+  if (contentIsOnlyUrl) item.content = '';
+  if (!item.title) {
+    if (item.fileStorageId) item.title = (item.fileName || 'Arquivo').replace(/\.[^.]+$/, '');
+    else if (item.imageData) item.title = 'Imagem salva';
+    else if (item.url) item.title = getDomain(item.url) || 'Link salvo';
+    else item.title = item.content.split(/\s+/).slice(0, 8).join(' ').replace(/[.,;:!?]+$/, '');
+  }
   if (item.type !== 'note' || !item.textStyle || isDefaultTextStyle(item.textStyle)) {
     delete item.textStyle;
   } else {
     item.textStyle = normalizeTextStyle(item.textStyle);
   }
-  if (item.type !== 'note' || !item.bodyImages.length) delete item.bodyImages;
+  if (!item.bodyImages.length) delete item.bodyImages;
+  delete item.isNew;
   return item;
 }
 function syncDraftFromDom() {
@@ -4643,6 +4802,62 @@ function syncDraftFromDom() {
   modalDraft.title = $('#f-title')?.value ?? modalDraft.title;
   modalDraft.url = $('#f-url')?.value ?? modalDraft.url;
   modalDraft.content = $('#f-content')?.value ?? modalDraft.content;
+}
+
+function refreshComposerLinkPreview() {
+  const urlInput = $('#f-url');
+  if (urlInput && modalDraft) urlInput.value = modalDraft.url || '';
+  const wrap = $('#composer-link-preview-wrap');
+  if (wrap && modalDraft) wrap.innerHTML = renderComposerLinkPreview(modalDraft);
+}
+
+function applyComposerAutoLink(text) {
+  if (!modalDraft?.isNew) return;
+  const url = extractFirstUrl(text);
+  if (url) {
+    modalDraft.url = url;
+    modalDraft.type = modalDraft.fileStorageId || modalDraft.imageData ? modalDraft.type : 'link';
+    if (!modalDraft.title) modalDraft.title = getDomain(url) || '';
+  } else if (modalDraft.type === 'link' && !modalDraft.fileStorageId && !modalDraft.imageData) {
+    modalDraft.url = '';
+    modalDraft.type = 'note';
+  }
+  state.editing = { ...modalDraft, isNew: true };
+  refreshComposerLinkPreview();
+}
+
+function clearComposerLink() {
+  if (!modalDraft) return;
+  syncDraftFromDom();
+  modalDraft.url = '';
+  if (modalDraft.type === 'link') modalDraft.type = 'note';
+  state.editing = { ...modalDraft, isNew: !modalDraft.id };
+  refreshComposerLinkPreview();
+  $('#f-content')?.focus();
+}
+
+async function pasteLinkIntoComposer() {
+  if (!modalDraft) return;
+  try {
+    const text = await navigator.clipboard.readText();
+    const url = extractFirstUrl(text);
+    if (!url) {
+      showToast('Nenhum link encontrado para colar');
+      $('#f-content')?.focus();
+      return;
+    }
+    syncDraftFromDom();
+    modalDraft.url = url;
+    modalDraft.type = 'link';
+    modalDraft.title = modalDraft.title || getDomain(url) || '';
+    if (!modalDraft.content.trim()) modalDraft.content = url;
+    state.editing = { ...modalDraft, isNew: !modalDraft.id };
+    renderModal();
+    scheduleYouTubeTitleFill(url);
+  } catch (err) {
+    showToast('Nao consegui acessar a area de transferencia');
+    $('#f-content')?.focus();
+  }
 }
 
 function updateFolderSelectionUI(rowSelector, attrName, value) {
@@ -4756,7 +4971,7 @@ function toggleDraftBullets() {
 function handleSave() {
   const d = commitDraftFromDom();
   if (!d) return;
-  if (!d.title && !d.content && !d.url) { closeEditor(); return; }
+  if (!d.title && !d.content && !d.url && !d.imageData && !d.fileStorageId && !itemBodyImages(d).length) { closeEditor(); return; }
   saveItem(d);
 }
 
@@ -4883,6 +5098,8 @@ document.addEventListener('click', (e) => {
     case 'clear-editor-image': clearEditorImage(); break;
     case 'remove-body-image': removeBodyImageFromEditor(id); break;
     case 'clear-editor-file': clearEditorFile(); break;
+    case 'composer-paste-link': pasteLinkIntoComposer(); break;
+    case 'composer-clear-link': clearComposerLink(); break;
     case 'download-file': downloadStoredFile(id); break;
     case 'open-pdf-reader': openPdfReader(id); break;
     case 'close-pdf-reader': closePdfReader(); break;
@@ -5043,6 +5260,10 @@ document.addEventListener('input', (e) => {
     if (modalDraft) modalDraft.url = value;
     scheduleYouTubeTitleFill(value);
   }
+  if (e.target.id === 'f-content' && modalDraft) {
+    modalDraft.content = e.target.value;
+    if (modalDraft.isNew) applyComposerAutoLink(e.target.value);
+  }
   if (e.target.id === 'quick-title' && state.quickAdd) {
     state.quickAdd.title = e.target.value;
   }
@@ -5059,8 +5280,9 @@ document.addEventListener('change', async (e) => {
     await handleEditorImageUpload(file);
   }
   if (e.target.id === 'f-file') {
-    const file = e.target.files?.[0];
-    await handleEditorFileUpload(file);
+    if (isComposerOpen()) await handleComposerAttachmentUpload(e.target.files);
+    else await handleEditorFileUpload(e.target.files?.[0]);
+    e.target.value = '';
   }
   if (e.target.id === 'f-body-image') {
     await addBodyImagesToEditingItem(e.target.files, 'Imagem adicionada ao texto');
