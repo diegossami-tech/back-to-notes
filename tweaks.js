@@ -58,6 +58,15 @@
     }
   }
 
+  function syncFromStorage() {
+    current = { ...current, ...storedTweaks() };
+    try {
+      const savedDensity = localStorage.getItem(DENSITY_KEY);
+      if (savedDensity) current.ritmo = savedDensity;
+    } catch {}
+    applyAll();
+  }
+
   // Update a single tweak — apply locally, persist via the host bridge.
   function setTweak(key, value) {
     if (current[key] === value) return;
@@ -75,6 +84,7 @@
 
   function openPanel() {
     if (panelOpen) return;
+    syncFromStorage();
     panelOpen = true;
     renderPanel();
     setTimeout(() => document.querySelector('.tweaks-panel')?.focus(), 60);

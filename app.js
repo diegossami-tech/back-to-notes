@@ -2790,7 +2790,7 @@ function renderTrashTools(items) {
         <span>${count} ${count === 1 ? 'item recuperavel' : 'itens recuperaveis'}${selectedCount ? ` · ${selectedCount} selecionados` : ''}</span>
       </div>
       <div class="trash-tools-actions">
-        <button data-action="select-all-visible">${icon('check-circle', 13)}<span>${selectedCount && selectedCount === count ? 'Limpar selecao' : 'Selecionar tudo'}</span></button>
+        <button data-action="select-all-visible" ${count ? '' : 'disabled'}>${icon('check-circle', 13)}<span>${selectedCount && selectedCount === count ? 'Limpar selecao' : 'Selecionar tudo'}</span></button>
         <button data-action="empty-trash" class="danger" ${count ? '' : 'disabled'}>${icon('trash', 13)}<span>Esvaziar</span></button>
       </div>
     </section>
@@ -2930,7 +2930,7 @@ function renderApp() {
             <button class="sort-btn" data-action="cycle-sort" title="Ordenar">
               ${icon('sort', 13)}<b>${SORT_OPTIONS.find(s => s.id === state.sortMode)?.label}</b>
             </button>
-            ${renderDensityControls()}
+            ${showHomeDashboard ? '' : renderDensityControls()}
           </div>
         ` : ''}
 
@@ -2938,7 +2938,7 @@ function renderApp() {
           ${state.loading
             ? '<div style="padding:80px 0;text-align:center;opacity:0.4;font-style:italic;">carregando...</div>'
             : items.length === 0
-              ? renderEmpty(state.items.length === 0)
+              ? `${renderTrashTools(items)}${renderEmpty(state.items.length === 0)}`
               : `${showHomeDashboard ? renderHomeDashboard(items) : ''}
                  ${renderTrashTools(items)}
                  <div class="grid">${items.map((it, i) => renderCard(it, i)).join('')}</div>`}
