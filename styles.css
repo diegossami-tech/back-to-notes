@@ -4887,6 +4887,33 @@ html[data-palette="lousa"] .card-file.card-file-compact {
   border-color: rgba(255,255,255,0.08);
 }
 
+.modal-media-link .view-link-preview.video-preview {
+  display: block;
+  width: 100%;
+  max-height: none;
+  background: #050505;
+}
+
+.modal-media-link .view-link-preview.video-preview .video-thumb-wrap {
+  width: 100%;
+  height: auto;
+  max-height: none;
+  aspect-ratio: 16 / 9;
+  background: #050505;
+}
+
+.modal-media-link .view-link-preview.video-preview .video-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
+.modal-media-link .view-link-preview.video-preview .video-play {
+  left: 50%;
+  top: 50%;
+}
+
 .trash-tools {
   margin: 0 0 18px;
   padding: 14px 16px;
