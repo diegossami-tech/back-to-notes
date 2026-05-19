@@ -464,7 +464,8 @@ function getYouTubeId(url) {
   return (m?.provider === 'youtube' && m.id) ? m.id : null;
 }
 
-function youtubeThumbUrl(id) { return `https://img.youtube.com/vi/${encodeURIComponent(id)}/hqdefault.jpg`; }
+function youtubeThumbUrl(id) { return `https://i.ytimg.com/vi/${encodeURIComponent(id)}/hq720.jpg`; }
+function youtubeThumbFallbackUrl(id) { return `https://img.youtube.com/vi/${encodeURIComponent(id)}/hqdefault.jpg`; }
 
 // ============ BRAND PRESENTATION ============
 // Per provider+kind: label badge, gradient backdrop, accent color, optional
@@ -538,7 +539,7 @@ function renderLinkPreview(url, extraClass='', thumbUrl=null, title='') {
     return `
       <a class="link-preview video-preview ${extraClass}" href="${esc(url)}" target="_blank" rel="noopener" data-stop draggable="false">
         <span class="video-thumb-wrap">
-          <img class="video-thumb" src="${esc(youtubeThumbUrl(youtubeId))}" alt="" draggable="false">
+          <img class="video-thumb" src="${esc(youtubeThumbUrl(youtubeId))}" alt="" draggable="false" onerror="this.onerror=null;this.src='${esc(youtubeThumbFallbackUrl(youtubeId))}'">
           <span class="video-play" aria-hidden="true"></span>
         </span>
         <span class="link-preview-text">
@@ -1543,7 +1544,13 @@ function saveItem(item) {
   if (exists) {
     state.items = state.items.map(i => i.id === item.id ? { ...item, updatedAt: now } : i);
   } else {
-    state.items = [{ ...item, id: uid(), createdAt: now, updatedAt: now }, ...state.items];
+    const sameScope = state.items
+      .filter(i => !i.deletedAt && (i.collection || '') === (item.collection || ''))
+      .map(i => Number(i.manualOrder))
+      .filter(Number.isFinite);
+    const topOrder = sameScope.length ? Math.min(...sameScope) - 1 : 0;
+    state.items = [{ ...item, id: uid(), createdAt: now, updatedAt: now, manualOrder: topOrder }, ...state.items];
+    state.sortMode = 'manual';
   }
   state.editing = null;
   state.viewing = null;
@@ -3231,7 +3238,7 @@ function renderCard(item, idx) {
       <article class="${cardClass}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="${draggableAttr}" style="animation-delay:${Math.min(idx * 25, 200)}ms">
         ${selectMark}
         <span class="video-thumb-wrap${isVerticalSource ? ' vertical-source' : ''}">
-          <img class="video-thumb" src="${esc(thumbSrc)}" alt="" draggable="false" referrerpolicy="no-referrer">
+          <img class="video-thumb" src="${esc(thumbSrc)}" alt="" draggable="false" referrerpolicy="no-referrer" ${isYoutubeVideo ? `onerror="this.onerror=null;this.src='${esc(youtubeThumbFallbackUrl(providerMeta.id))}'"` : ''}>
           ${badgeHtml}
           ${playOverlay}
         </span>
@@ -3554,6 +3561,7 @@ function renderViewer(root) {
   const type = ITEM_TYPES.find(t => t.id === item.type) || ITEM_TYPES[0];
   const col = state.collections.find(c => c.id === item.collection);
   const domain = item.url ? getDomain(item.url) : null;
+  const providerMeta = item.url ? detectProvider(item.url) : null;
   const tags = Array.isArray(item.tags) ? item.tags : [];
   const overlayKind = isMobile() ? 'bottom-sheet' : 'center';
   const hasPdfPreview = isPdfFileLike(item);
@@ -3561,6 +3569,8 @@ function renderViewer(root) {
     ? textStyleClass(item.textStyle)
     : '';
   const modalClass = [
+    domain ? 'modal-link' : '',
+    providerMeta ? 'modal-media-link' : '',
     item.imageData ? 'modal-image' : '',
     hasPdfPreview ? 'modal-pdf' : '',
   ].filter(Boolean).join(' ');
@@ -3623,7 +3633,7 @@ function renderViewer(root) {
 
           ${item.content
             ? `<div class="view-content ${item.type === 'note' ? `serif ${viewTextStyleClass}` : ''}">${esc(item.content)}</div>`
-            : (item.imageData || item.fileStorageId || hasBodyImages(item)) ? '' : '<p class="view-empty">Sem anotações ainda.</p>'}
+            : (domain || item.imageData || item.fileStorageId || hasBodyImages(item)) ? '' : '<p class="view-empty">Sem anotações ainda.</p>'}
 
           ${renderBodyImages(item.bodyImages, 'view-body-images')}
 
