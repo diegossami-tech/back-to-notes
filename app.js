@@ -533,6 +533,7 @@ function renderLinkPreview(url, extraClass='', thumbUrl=null, title='') {
 
   const meta = detectProvider(url);
   const youtubeId = getYouTubeId(url);
+  const domainInitial = domain.charAt(0).toUpperCase();
 
   // YouTube videos — full 16:9 hero treatment with real thumb.
   if (youtubeId && meta?.kind === 'video') {
@@ -597,8 +598,8 @@ function renderLinkPreview(url, extraClass='', thumbUrl=null, title='') {
       <a class="link-preview link-preview-rich ${extraClass}" href="${esc(url)}" target="_blank" rel="noopener" data-stop draggable="false">
         ${thumbUrl
           ? `<span class="link-preview-thumb"><img src="${esc(thumbUrl)}" alt="" draggable="false" referrerpolicy="no-referrer"></span>`
-          : `<img class="link-favicon" src="${esc(faviconUrl(url))}" alt="" draggable="false">`}
-        <span class="link-preview-text">
+          : `<span class="link-favicon link-favicon-letter" aria-hidden="true">${esc(domainInitial)}</span>`}
+        <span class="link-preview-text link-info">
           ${title ? `<span class="link-preview-title">${esc(title)}</span>` : ''}
           <span class="link-preview-domain">${esc(domain)}</span>
           <span class="link-preview-url">${esc(shortUrl(url))}</span>
@@ -609,8 +610,8 @@ function renderLinkPreview(url, extraClass='', thumbUrl=null, title='') {
   // Fallback: favicon-only link preview.
   return `
     <a class="link-preview ${extraClass}" href="${esc(url)}" target="_blank" rel="noopener" data-stop draggable="false">
-      <img class="link-favicon" src="${esc(faviconUrl(url))}" alt="" draggable="false">
-      <span class="link-preview-text">
+      <span class="link-favicon link-favicon-letter" aria-hidden="true">${esc(domainInitial)}</span>
+      <span class="link-preview-text link-info">
         <span class="link-preview-domain">${esc(domain)}</span>
         <span class="link-preview-url">${esc(shortUrl(url))}</span>
       </span>
@@ -3143,15 +3144,20 @@ function renderCard(item, idx) {
   `;
   const titleHtml = `<h3 class="card-title">${item.title ? esc(item.title) : '<em style="opacity:0.5">Sem título</em>'}</h3>`;
   const contentHtml = item.content ? `<p class="card-content ${isCenteredTextPreview ? 'centered-preview' : ''} ${contentStyleClass}">${esc(item.content)}</p>` : '';
+  const textDividerHtml = item.type === 'note' && contentHtml ? '<div class="card-divider" aria-hidden="true"></div>' : '';
   const bodyImagesHtml = renderBodyImages(item.bodyImages, 'card-body-images');
   const tagsHtml = tags.slice(0, 3).map(t => `<span class="tag">${esc(t)}</span>`).join('') +
     (tags.length > 3 ? `<span class="tag-more">+${tags.length - 3}</span>` : '');
+  const fileExt = String(item.fileName || '').split('.').pop()?.toUpperCase();
+  const fileTypeText = isPdfFileLike(item) ? 'PDF' : isWordFileLike(item) ? (fileExt === 'DOC' ? 'DOC' : 'DOCX') : (fileExt && fileExt.length <= 5 ? fileExt : 'ARQ');
+  const fileIconText = fileTypeText.charAt(0) || 'A';
+  const fileMetaText = [fileTypeText, formatBytes(item.fileSize)].filter(Boolean).join(' · ');
   const fileHtml = item.fileStorageId && !hasPdfPreview ? `
-    <div class="card-file">
-      <span class="card-file-icon">${icon('folder', 16)}</span>
-      <span class="card-file-text">
-        <strong>${esc(item.fileName || item.title || 'Arquivo')}</strong>
-        <small>${esc(formatBytes(item.fileSize) || item.fileType || 'arquivo salvo')}</small>
+    <div class="card-file file-preview">
+      <span class="card-file-icon file-icon" aria-hidden="true">${esc(fileIconText)}</span>
+      <span class="card-file-text file-info">
+        <strong class="file-name">${esc(item.fileName || item.title || 'Arquivo')}</strong>
+        <small class="file-meta">${esc(fileMetaText || item.fileType || 'arquivo salvo')}</small>
       </span>
     </div>
   ` : '';
@@ -3175,15 +3181,17 @@ function renderCard(item, idx) {
 
   // Image variant: title first, then media preview and text.
   if (variant === 'image' && item.imageData) {
+    const overlaySubtitle = col?.name || cardKindLabelForItem(item);
     return `
       <article class="${cardClass}" data-action="view" data-id="${esc(item.id)}" data-card-id="${esc(item.id)}" draggable="${draggableAttr}" style="animation-delay:${Math.min(idx * 25, 200)}ms">
         ${selectMark}
         <div class="card-body">
-          ${head}
-          ${titleHtml}
           <div class="card-image-wrap">
             <img class="card-image" src="${esc(item.imageData)}" alt="" draggable="false">
+            <span class="card-title-overlay">${item.title ? esc(item.title) : 'Sem titulo'}</span>
+            <span class="card-subtitle-overlay">${esc(overlaySubtitle)}</span>
           </div>
+          ${head}
           ${contentHtml}
           ${bodyImagesHtml}
           ${foot}
@@ -3207,10 +3215,10 @@ function renderCard(item, idx) {
           ${head}
           ${titleHtml}
           <div class="card-file card-file-compact">
-            <span class="card-file-icon">${icon('file-text', 16)}</span>
-            <span class="card-file-text">
-              <strong>${esc(item.fileName || item.title || 'PDF')}</strong>
-              <small>${esc(formatBytes(item.fileSize) || 'PDF')}</small>
+            <span class="card-file-icon file-icon" aria-hidden="true">P</span>
+            <span class="card-file-text file-info">
+              <strong class="file-name">${esc(item.fileName || item.title || 'PDF')}</strong>
+              <small class="file-meta">${esc(['PDF', formatBytes(item.fileSize)].filter(Boolean).join(' · '))}</small>
             </span>
           </div>
           ${contentHtml}
@@ -3239,6 +3247,7 @@ function renderCard(item, idx) {
         ${selectMark}
         <span class="video-thumb-wrap${isVerticalSource ? ' vertical-source' : ''}">
           <img class="video-thumb" src="${esc(thumbSrc)}" alt="" draggable="false" referrerpolicy="no-referrer" ${isYoutubeVideo ? `onerror="this.onerror=null;this.src='${esc(youtubeThumbFallbackUrl(providerMeta.id))}'"` : ''}>
+          <span class="video-tag">Video</span>
           ${badgeHtml}
           ${playOverlay}
         </span>
@@ -3259,6 +3268,7 @@ function renderCard(item, idx) {
       ${head}
       ${titleHtml}
       ${fileHtml}
+      ${textDividerHtml}
       ${contentHtml}
       ${bodyImagesHtml}
       ${domain && !item.imageData ? renderLinkPreview(item.url, '', item.thumbUrl, item.linkTitle || item.title) : ''}
